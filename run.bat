@@ -3,13 +3,17 @@
 cd /d "%~dp0"
 
 echo ====================================================================
-echo             Personal Job Aggregator & Tracker Runner                
+echo             Personal Job Aggregator ^& Tracker Runner                
 echo ====================================================================
 echo Working Directory: %CD%
 
-:: Check if venv directory exists
-if not exist "venv\" (
-    echo [INFO] Virtual environment 'venv' not found. Creating it...
+:: Check if venv is properly initialized by checking for activate.bat
+if not exist "venv\Scripts\activate.bat" (
+    if exist "venv\" (
+        echo [INFO] Incomplete/corrupt virtual environment found. Cleaning it up...
+        rmdir /s /q venv
+    )
+    echo [INFO] Virtual environment 'venv' not found or incomplete. Creating it...
     python -m venv venv
     if errorlevel 1 (
         echo [ERROR] Failed to create virtual environment. Make sure Python is installed and added to PATH.
