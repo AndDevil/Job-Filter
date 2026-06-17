@@ -1,6 +1,6 @@
+jobhive-py[parquet]
+python-jobspy
 pandas
 requests
-python-jobspy
-jobhive-py[parquet]
 streamlit
 plotly

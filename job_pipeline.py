@@ -29,6 +29,8 @@ if hasattr(sys.stdout, 'reconfigure'):
     except Exception:
         pass
 
+import glob
+from datetime import datetime
 import pandas as pd
 import requests
 
@@ -457,9 +459,22 @@ def main():
     # Sort entire dataset by score descending, then date posted descending
     deduped_all = deduped_all.sort_values(by=["score", "posted"], ascending=[False, False])
     
-    # Save Combined File
+    # Phase 3.5: Save outputs with timestamped history archiving
+    history_dir = "job_history"
+    if not os.path.exists(history_dir):
+        os.makedirs(history_dir)
+        print(f"📁 Created history folder: '{history_dir}'", flush=True)
+        
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    
+    # Save Combined File to root
     deduped_all.to_csv("all_jobs_combined.csv", index=False)
     print("Saved aggregated dataset to: 'all_jobs_combined.csv'", flush=True)
+    
+    # Save Combined File to history
+    history_all_path = os.path.join(history_dir, f"all_jobs_combined_{timestamp}.csv")
+    deduped_all.to_csv(history_all_path, index=False)
+    print(f"📜 Archived full dataset to: '{history_all_path}'", flush=True)
     
     # Phase 4: Filter relevant records
     print("\n" + "-" * 80)
@@ -470,9 +485,34 @@ def main():
     relevant_jobs = deduped_all.head(50).copy()
     print(f"Extracted top {len(relevant_jobs)} scored jobs.", flush=True)
     
-    # Save Relevant File
+    # Save Relevant File to root
     relevant_jobs.to_csv("relevant_jobs.csv", index=False)
     print("Saved relevant dataset to: 'relevant_jobs.csv'", flush=True)
+    
+    # Save Relevant File to history
+    history_rel_path = os.path.join(history_dir, f"relevant_jobs_{timestamp}.csv")
+    relevant_jobs.to_csv(history_rel_path, index=False)
+    print(f"📜 Archived relevant dataset to: '{history_rel_path}'", flush=True)
+    
+    # Clean up old files in job_history older than 30 days
+    print("\n🧹 Cleaning up old history files (> 30 days old)...", flush=True)
+    now_ts = time.time()
+    cutoff_sec = 30 * 24 * 60 * 60  # 30 days
+    deleted_count = 0
+    
+    for filepath in glob.glob(os.path.join(history_dir, "*.csv")):
+        file_mtime = os.path.getmtime(filepath)
+        if (now_ts - file_mtime) > cutoff_sec:
+            try:
+                os.remove(filepath)
+                deleted_count += 1
+            except Exception as e:
+                print(f"⚠️ Could not delete old file {filepath}: {e}", flush=True)
+                
+    if deleted_count > 0:
+        print(f"✅ Deleted {deleted_count} historical files older than 30 days.", flush=True)
+    else:
+        print("✅ No history files older than 30 days found.", flush=True)
     
     # Phase 5: Format terminal displays
     print("\n" + "=" * 80)

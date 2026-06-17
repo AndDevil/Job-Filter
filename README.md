@@ -89,3 +89,39 @@ The scraper is configured to run automatically on GitHub Actions:
 * **Trigger Times**: Daily at `08:00 AM UTC` and manual triggers.
 * **Outputs**: Artifacts containing `relevant_jobs.csv` and `all_jobs_combined.csv` (retained for 30 days).
 * **Setup**: Push the `.github/workflows/scrape.yml` file to your GitHub repository to enable the workflow.
+
+---
+
+## 💻 Windows Local Setup & Automation
+
+### 1. One-Click execution (`run.bat`)
+We have provided a `run.bat` file in the project root. Double-click it to:
+* Verify or initialize the virtual environment (`venv`) automatically.
+* Install missing dependencies.
+* Run the job scraping pipeline (`job_pipeline.py`).
+* Choose if you want to start the Streamlit dashboard (`Launch tracker dashboard? (y/n)`).
+
+### 2. Windows Task Scheduler Setup
+To automate the pipeline daily at 8:00 AM, select one of the options below:
+
+#### Option A: Command Line (schtasks)
+Run Command Prompt as **Administrator** and execute the following command:
+```cmd
+schtasks /create /tn "JobAggregatorPipeline" /tr "C:\path\to\project\run.bat" /sc daily /st 08:00
+```
+> [!IMPORTANT]
+> Make sure to replace `C:\path\to\project` with the actual absolute path to your `Job Filter` folder.
+
+#### Option B: Windows Task Scheduler GUI
+1. Press `Win + R`, type `taskschd.msc`, and press Enter to open Task Scheduler.
+2. In the right-hand panel, click **Create Basic Task...**
+3. **Name**: Enter `Job Aggregator Pipeline` and click Next.
+4. **Trigger**: Select **Daily** and click Next. Set the start time to `08:00 AM` and recur every 1 day, then click Next.
+5. **Action**: Select **Start a program** and click Next.
+6. **Program/script**: Browse and select `C:\path\to\project\run.bat`.
+7. **Start in (optional)**: Enter the folder path `C:\path\to\project` (without quotes) to ensure the batch script resolves relative file paths correctly. Click Next.
+8. Click **Finish**.
+
+### How to Test and Check Logs
+* **Immediate Test**: Right-click the task `JobAggregatorPipeline` in the Active Tasks list and select **Run**.
+* **Audit and Run Log**: You can check the execution outcomes in Task Scheduler under the **History** tab (ensure "Enable All Tasks History" is checked in the Actions panel).

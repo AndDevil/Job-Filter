@@ -13,6 +13,8 @@ __pycache__/
 all_jobs_combined.csv
 relevant_jobs.csv
 job_tracker.db
+job_history/
+
 
 # OS metadata
 .DS_Store
