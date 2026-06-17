@@ -35,6 +35,14 @@ if not exist "venv\Scripts\activate.bat" (
     call venv\Scripts\activate.bat
 )
 
+:: Verify dependencies are installed; install if missing
+python -c "import pandas, requests, streamlit, plotly" >nul 2>&1
+if errorlevel 1 (
+    echo [INFO] Missing dependencies detected in virtual environment. Installing requirements...
+    python -m pip install --upgrade pip
+    pip install -r requirements.txt
+)
+
 echo.
 echo [INFO] Executing the job aggregation and scoring pipeline...
 python job_pipeline.py
