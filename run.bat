@@ -33,7 +33,7 @@ if not exist "venv\Scripts\activate.bat" (
     if errorlevel 1 (
         echo [WARNING] Standard pip install failed. Attempting Python 3.14+ compatibility installation, bypassing python-jobspy numpy pin...
         pip install --no-deps python-jobspy
-        pip install pandas requests streamlit plotly jobhive-py[parquet] numpy
+        pip install pandas requests streamlit plotly jobhive-py[parquet] numpy beautifulsoup4 markdownify regex tls-client
     )
 ) else (
     echo [INFO] Activating virtual environment...
@@ -49,7 +49,7 @@ if errorlevel 1 (
     if errorlevel 1 (
         echo [WARNING] Standard pip install failed. Attempting Python 3.14+ compatibility installation, bypassing python-jobspy numpy pin...
         pip install --no-deps python-jobspy
-        pip install pandas requests streamlit plotly jobhive-py[parquet] numpy
+        pip install pandas requests streamlit plotly jobhive-py[parquet] numpy beautifulsoup4 markdownify regex tls-client
     )
 )
 
