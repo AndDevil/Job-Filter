@@ -5,6 +5,17 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
+# --- Auto-Refresh Check on Data Change ---
+CSV_FILE = "relevant_jobs.csv"
+if os.path.exists(CSV_FILE):
+    current_mtime = os.path.getmtime(CSV_FILE)
+    if "last_csv_mtime" not in st.session_state:
+        st.session_state["last_csv_mtime"] = current_mtime
+    elif current_mtime != st.session_state["last_csv_mtime"]:
+        st.session_state["last_csv_mtime"] = current_mtime
+        st.cache_data.clear()
+        st.rerun()
+
 # 1. Page Configuration
 st.set_page_config(
     page_title="Personal Job Tracker",
