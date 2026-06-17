@@ -30,6 +30,11 @@ if not exist "venv\Scripts\activate.bat" (
     
     echo [INFO] Installing required dependencies...
     pip install -r requirements.txt
+    if errorlevel 1 (
+        echo [WARNING] Standard pip install failed. Attempting Python 3.14+ compatibility installation (bypassing python-jobspy numpy pin)...
+        pip install --no-deps python-jobspy
+        pip install pandas requests streamlit plotly jobhive-py[parquet] numpy
+    )
 ) else (
     echo [INFO] Activating virtual environment...
     call venv\Scripts\activate.bat
@@ -41,6 +46,11 @@ if errorlevel 1 (
     echo [INFO] Missing dependencies detected in virtual environment. Installing requirements...
     python -m pip install --upgrade pip
     pip install -r requirements.txt
+    if errorlevel 1 (
+        echo [WARNING] Standard pip install failed. Attempting Python 3.14+ compatibility installation (bypassing python-jobspy numpy pin)...
+        pip install --no-deps python-jobspy
+        pip install pandas requests streamlit plotly jobhive-py[parquet] numpy
+    )
 )
 
 echo.
