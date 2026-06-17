@@ -1,0 +1,19 @@
+# Virtual environment
+.venv/
+env/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Scraped Data & Database
+all_jobs_combined.csv
+relevant_jobs.csv
+job_tracker.db
+
+# OS metadata
+.DS_Store
+Thumbs.db

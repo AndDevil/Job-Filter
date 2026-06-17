@@ -1,0 +1,6 @@
+pandas
+requests
+python-jobspy
+jobhive-py[parquet]
+streamlit
+plotly
