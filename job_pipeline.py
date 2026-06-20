@@ -33,6 +33,8 @@ import glob
 from datetime import datetime
 import pandas as pd
 import requests
+import psycopg2
+from psycopg2.extras import execute_values
 
 # Set pandas options for nice terminal outputs
 pd.set_option('display.max_columns', None)
@@ -270,6 +272,44 @@ def fetch_jobspy(search_term, location, results_wanted):
         from jobspy import scrape_jobs
         site_names = ["linkedin", "indeed", "glassdoor", "google", "zip_recruiter"]
         
+        proxy = os.getenv("JOBSPY_PROXY")
+        if proxy:
+            print("[JobSpy] Using configured proxy server/API key.", flush=True)
+            import ssl
+            import urllib3
+            try:
+                ssl._create_default_https_context = ssl._create_unverified_context
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                
+                # Monkey-patch requests
+                import requests
+                original_request = requests.Session.request
+                def unverified_request(self, *args, **kwargs):
+                    kwargs['verify'] = False
+                    return original_request(self, *args, **kwargs)
+                requests.Session.request = unverified_request
+                
+                # Monkey-patch httpx Client
+                import httpx
+                original_init = httpx.Client.__init__
+                def unverified_client_init(self, *args, **kwargs):
+                    kwargs['verify'] = False
+                    original_init(self, *args, **kwargs)
+                httpx.Client.__init__ = unverified_client_init
+                
+                # Monkey-patch httpx AsyncClient
+                original_async_init = httpx.AsyncClient.__init__
+                def unverified_async_client_init(self, *args, **kwargs):
+                    kwargs['verify'] = False
+                    original_async_init(self, *args, **kwargs)
+                httpx.AsyncClient.__init__ = unverified_async_client_init
+                
+                print("[JobSpy] Globally disabled SSL certificate verification for proxy routing.", flush=True)
+            except Exception as e:
+                print(f"⚠️ Failed to disable SSL verification: {e}", flush=True)
+        else:
+            proxy = None
+            
         print(f"[JobSpy] Querying {site_names} for '{search_term}' in '{location}'...", flush=True)
         df = scrape_jobs(
             site_name=site_names,
@@ -277,7 +317,8 @@ def fetch_jobspy(search_term, location, results_wanted):
             location=location,
             results_wanted=results_wanted,
             hours_old=72,
-            country_indeed="USA"
+            country_indeed="USA",
+            proxies=proxy
         )
         print(f"✅ [JobSpy] Successfully scraped {len(df)} jobs.", flush=True)
         return df
@@ -410,6 +451,80 @@ def deduplicate_jobs(df):
     df = df.drop(columns=["_priority", "_norm_title", "_norm_company", "_norm_location"])
     return df
 
+def send_telegram_notification(job):
+    """Sends a job alert message to Telegram."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        return False
+        
+    title = job.get('job_title', 'Unknown Title')
+    company = job.get('company', 'Unknown Company')
+    location = job.get('location', 'N/A')
+    score = job.get('score', 0)
+    url = job.get('url', '#')
+    
+    message = (
+        f"🎯 *New Job Alert (Score: {score})*\n"
+        f"💼 *Role*: {title}\n"
+        f"🏢 *Company*: {company}\n"
+        f"📍 *Location*: {location}\n"
+        f"🔗 [Apply Here]({url})"
+    )
+    
+    api_url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "Markdown",
+        "disable_web_page_preview": False
+    }
+    
+    try:
+        r = requests.post(api_url, json=payload, timeout=10)
+        r.raise_for_status()
+        return True
+    except Exception as e:
+        print(f"⚠️ Telegram alert failed: {e}", flush=True)
+        return False
+
+
+def send_discord_notification(job):
+    """Sends a job alert message to Discord via webhook."""
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if not webhook_url:
+        return False
+        
+    title = job.get('job_title', 'Unknown Title')
+    company = job.get('company', 'Unknown Company')
+    location = job.get('location', 'N/A')
+    score = job.get('score', 0)
+    url = job.get('url', '#')
+    
+    embed = {
+        "title": f"🎯 New Job Alert (Score: {score})",
+        "color": 2452203,  # Blue color
+        "fields": [
+            {"name": "💼 Role", "value": title, "inline": True},
+            {"name": "🏢 Company", "value": company, "inline": True},
+            {"name": "📍 Location", "value": location, "inline": True},
+            {"name": "🔗 Link", "value": f"[Apply Here]({url})", "inline": False}
+        ]
+    }
+    
+    payload = {
+        "embeds": [embed]
+    }
+    
+    try:
+        r = requests.post(webhook_url, json=payload, timeout=10)
+        r.raise_for_status()
+        return True
+    except Exception as e:
+        print(f"⚠️ Discord alert failed: {e}", flush=True)
+        return False
+
+
 # ==========================================
 # MAIN ROUTINE ENTRYPOINT
 # ==========================================
@@ -513,6 +628,166 @@ def main():
         print(f"✅ Deleted {deleted_count} historical files older than 30 days.", flush=True)
     else:
         print("✅ No history files older than 30 days found.", flush=True)
+        
+    # Phase 4.5: Sync to Supabase PostgreSQL (if SUPABASE_DB_URL is set)
+    db_url = os.getenv("SUPABASE_DB_URL")
+    min_score = int(os.getenv("NOTIFICATION_MIN_SCORE", 85))
+    
+    if db_url:
+        print("\n" + "-" * 80)
+        print("☁️ DATABASE CLOUD SYNC (Supabase PostgreSQL)")
+        print("-" * 80, flush=True)
+        try:
+            # Connect to PostgreSQL
+            conn = psycopg2.connect(db_url)
+            cursor = conn.cursor()
+            
+            # Create schema tables if not exist
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS jobs (
+                    url TEXT PRIMARY KEY,
+                    job_title TEXT,
+                    company TEXT,
+                    location TEXT,
+                    description TEXT,
+                    posted TEXT,
+                    salary_min FLOAT,
+                    salary_max FLOAT,
+                    is_remote BOOLEAN,
+                    source TEXT,
+                    score INTEGER,
+                    alert_sent BOOLEAN DEFAULT FALSE,
+                    scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS applications (
+                    job_url TEXT PRIMARY KEY REFERENCES jobs(url) ON DELETE CASCADE,
+                    status TEXT DEFAULT 'New',
+                    notes TEXT DEFAULT '',
+                    applied_date TEXT,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            conn.commit()
+            
+            # Retrieve existing URLs from the database to determine which scraped jobs are "new"
+            cursor.execute("SELECT url FROM jobs;")
+            existing_urls = {row[0] for row in cursor.fetchall()}
+            print(f"[DB] Found {len(existing_urls)} existing job records in database.", flush=True)
+            
+            # Prepare rows to insert/upsert
+            upsert_query = """
+                INSERT INTO jobs (
+                    url, job_title, company, location, description, posted, 
+                    salary_min, salary_max, is_remote, source, score
+                ) VALUES %s
+                ON CONFLICT (url) DO UPDATE SET
+                    job_title = EXCLUDED.job_title,
+                    company = EXCLUDED.company,
+                    location = EXCLUDED.location,
+                    description = EXCLUDED.description,
+                    posted = EXCLUDED.posted,
+                    salary_min = EXCLUDED.salary_min,
+                    salary_max = EXCLUDED.salary_max,
+                    is_remote = EXCLUDED.is_remote,
+                    source = EXCLUDED.source,
+                    score = EXCLUDED.score;
+            """
+            
+            # Prepare data values
+            data_values = []
+            for _, row in deduped_all.iterrows():
+                # Convert NaN to None for SQL safety
+                salary_min = float(row['salary_min']) if pd.notna(row['salary_min']) else None
+                salary_max = float(row['salary_max']) if pd.notna(row['salary_max']) else None
+                is_remote = bool(row['is_remote']) if pd.notna(row['is_remote']) else False
+                score = int(row['score']) if pd.notna(row['score']) else 0
+                
+                data_values.append((
+                    row['url'],
+                    row['job_title'],
+                    row['company'],
+                    row['location'],
+                    row['description'],
+                    row['posted'],
+                    salary_min,
+                    salary_max,
+                    is_remote,
+                    row['source'],
+                    score
+                ))
+            
+            # Perform bulk upsert
+            if data_values:
+                execute_values(cursor, upsert_query, data_values)
+                conn.commit()
+                print(f"✅ [DB] Successfully synchronized {len(data_values)} jobs to Supabase.", flush=True)
+            
+            # Identify new high-scoring jobs for alerts
+            alert_jobs = []
+            for _, row in deduped_all.iterrows():
+                url = row['url']
+                score = int(row['score']) if pd.notna(row['score']) else 0
+                # If this job URL was not already in the DB and score meets threshold
+                if url not in existing_urls and score >= min_score:
+                    alert_jobs.append(row)
+                    
+            if alert_jobs:
+                print(f"[Alert] Found {len(alert_jobs)} new high-score jobs (>= {min_score}). Dispatching alerts...", flush=True)
+                for job in alert_jobs:
+                    # Try sending Telegram notification
+                    tg_success = send_telegram_notification(job)
+                    # Try sending Discord notification
+                    dc_success = send_discord_notification(job)
+                    
+                    if tg_success or dc_success:
+                        # Mark alert as sent in the database
+                        cursor.execute("UPDATE jobs SET alert_sent = TRUE WHERE url = %s;", (job['url'],))
+                        print(f"  - Dispatched alert for '{job['job_title']}' at '{job['company']}' (Score: {job['score']})", flush=True)
+                conn.commit()
+            else:
+                print("✅ [Alert] No new high-scoring jobs found to dispatch.", flush=True)
+                
+            cursor.close()
+            conn.close()
+            
+        except Exception as e:
+            print(f"❌ [DB] Database cloud sync failed: {e}", flush=True)
+            
+    else:
+        print("\n" + "-" * 80)
+        print("ℹ️ DATABASE CLOUD SYNC SKIPPED (SUPABASE_DB_URL not set)")
+        print("-" * 80, flush=True)
+        # Check if local notifications need to be dispatched
+        tg_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        dc_webhook = os.getenv("DISCORD_WEBHOOK_URL")
+        if (tg_token and os.getenv("TELEGRAM_CHAT_ID")) or dc_webhook:
+            try:
+                # Read sent alerts list from local file
+                alert_log_file = os.path.join(history_dir, "sent_alerts.txt")
+                sent_alerts = set()
+                if os.path.exists(alert_log_file):
+                    with open(alert_log_file, "r", encoding="utf-8") as f:
+                        sent_alerts = {line.strip() for line in f if line.strip()}
+                        
+                alert_count = 0
+                with open(alert_log_file, "a", encoding="utf-8") as f:
+                    for _, row in deduped_all.iterrows():
+                        url = row['url']
+                        score = int(row['score']) if pd.notna(row['score']) else 0
+                        if url not in sent_alerts and score >= min_score:
+                            tg_success = send_telegram_notification(row)
+                            dc_success = send_discord_notification(row)
+                            if tg_success or dc_success:
+                                f.write(url + "\n")
+                                alert_count += 1
+                                print(f"  - Dispatched local alert for '{row['job_title']}' at '{row['company']}' (Score: {row['score']})", flush=True)
+                if alert_count > 0:
+                    print(f"✅ Dispatched {alert_count} local alerts successfully.", flush=True)
+            except Exception as e:
+                print(f"⚠️ Failed to process local alerts: {e}", flush=True)
     
     # Phase 5: Format terminal displays
     print("\n" + "=" * 80)

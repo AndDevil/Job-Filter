@@ -92,6 +92,60 @@ The scraper is configured to run automatically on GitHub Actions:
 
 ---
 
+## ☁️ Cloud Migration & Alerts Setup (Supabase & Webhooks)
+
+This project supports running as a cloud-native service. When configured, jobs are synced to a cloud PostgreSQL database, and new high-scoring matches trigger alerts directly to your phone via Telegram or Discord.
+
+### 1. Supabase Database Setup
+1. Create a free account at [Supabase](https://supabase.com/).
+2. Create a new project.
+3. Go to **Project Settings** -> **Database** and copy your **URI connection string** (PostgreSQL). It looks like this:
+   `postgresql://postgres:[YOUR-PASSWORD]@db.iaphlkshrcgnlunkwgta.supabase.co:5432/postgres`
+4. Set this as the `SUPABASE_DB_URL` environment variable. The scraper will automatically set up the schema and sync listings.
+
+### 2. Real-Time Phone Alerts Setup
+
+#### Telegram Bot Setup (Optional)
+1. Message `@BotFather` on Telegram and send `/newbot` to create your bot. Copy the generated **Bot Token**.
+2. Start a chat with your bot, then message `@userinfobot` to retrieve your personal **Telegram Chat ID**.
+3. Set the environment variables `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
+
+#### Discord Webhook Setup (Optional)
+1. Open Discord, go to **Server Settings** -> **Integrations** -> **Webhooks**.
+2. Click **Create Webhook**, select the target channel, and copy the **Webhook URL**.
+3. Set this as the `DISCORD_WEBHOOK_URL` environment variable.
+
+### 3. JobSpy Proxy Setup
+To bypass rate limits when scraping on cloud runners (like GitHub Actions), configure a proxy:
+1. Obtain a rotating proxy address or API endpoint (e.g., from ScraperAPI, Webshare).
+2. Set the `JOBSPY_PROXY` environment variable. JobSpy will route all HTTP requests through this proxy.
+
+### 4. Configuration Variables
+Secure your deployment by setting these environment variables locally (or as GitHub Secrets):
+
+| Variable Name | Description | Required / Optional |
+|---|---|---|
+| `SUPABASE_DB_URL` | Supabase PostgreSQL Connection String | Optional (falls back to local SQLite/CSV) |
+| `APP_PASSWORD` | Access password for the Streamlit dashboard | Optional (locks app if set) |
+| `JOBSPY_PROXY` | Proxy endpoint URL or API key | Optional (bypasses cloud rate limits) |
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot API Token | Optional (enables phone alerts) |
+| `TELEGRAM_CHAT_ID` | Telegram User Chat ID | Optional (enables phone alerts) |
+| `DISCORD_WEBHOOK_URL` | Discord Channel Webhook URL | Optional (enables phone alerts) |
+| `NOTIFICATION_MIN_SCORE` | Minimum score threshold for notifications (default: `85`) | Optional |
+
+### 5. Streamlit Cloud Deployment
+1. Push your repository to GitHub.
+2. Sign in to [Streamlit Community Cloud](https://share.streamlit.io/).
+3. Click **New app**, select your repository, branch, and file (`dashboard.py`).
+4. In the app settings, click **Advanced settings** and paste your environment variables into the **Secrets** text area, e.g.:
+   ```toml
+   SUPABASE_DB_URL = "postgresql://..."
+   APP_PASSWORD = "your-secure-password"
+   ```
+5. Click **Deploy**. Your secure dashboard is now live and connected to your database!
+
+---
+
 ## 💻 Windows Local Setup & Automation
 
 ### 1. One-Click execution (`run.bat`)
