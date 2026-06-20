@@ -46,6 +46,8 @@ if not check_password():
 
 # --- PostgreSQL Caching and Configuration ---
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
+if SUPABASE_DB_URL:
+    SUPABASE_DB_URL = SUPABASE_DB_URL.strip()
 DB_FILE = "job_tracker.db"
 
 try:

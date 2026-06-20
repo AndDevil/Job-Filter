@@ -631,6 +631,8 @@ def main():
         
     # Phase 4.5: Sync to Supabase PostgreSQL (if SUPABASE_DB_URL is set)
     db_url = os.getenv("SUPABASE_DB_URL")
+    if db_url:
+        db_url = db_url.strip()
     min_score = int(os.getenv("NOTIFICATION_MIN_SCORE", 85))
     
     if db_url:
