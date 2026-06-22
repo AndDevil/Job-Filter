@@ -265,6 +265,38 @@ def fetch_jobhive(search_term, location, results_wanted, ats_list, use_full_snap
         return pd.DataFrame()
 
 
+def parse_proxy_string(proxy_env):
+    """
+    Parses JOBSPY_PROXY env variable.
+    Can be a single proxy string or multiple proxies separated by comma, semicolon, or newline.
+    Supports formats:
+      - ip:port:username:password (Webshare format)
+      - http://username:password@ip:port
+    Returns a list of proxy URLs (or a single URL if only one is present).
+    """
+    if not proxy_env:
+        return None
+    raw_list = []
+    # Replace newlines/semicolons with commas and split
+    cleaned = proxy_env.replace("\r", "").replace(";", ",").replace("\n", ",")
+    for part in cleaned.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if part.count(":") == 3:
+            # ip:port:username:password -> http://username:password@ip:port
+            subparts = part.split(":")
+            raw_list.append(f"http://{subparts[2]}:{subparts[3]}@{subparts[0]}:{subparts[1]}")
+        elif "://" in part:
+            raw_list.append(part)
+        elif "@" in part:
+            raw_list.append(f"http://{part}")
+        else:
+            raw_list.append(part)
+    if not raw_list:
+        return None
+    return raw_list[0] if len(raw_list) == 1 else raw_list
+
 def fetch_jobspy(search_term, location, results_wanted):
     """Scrapes LinkedIn, Indeed, Glassdoor, Google, ZipRecruiter using JobSpy."""
     print("🚀 [JobSpy] Starting scraper run...", flush=True)
@@ -272,41 +304,53 @@ def fetch_jobspy(search_term, location, results_wanted):
         from jobspy import scrape_jobs
         site_names = ["linkedin", "indeed", "glassdoor", "google", "zip_recruiter"]
         
-        proxy = os.getenv("JOBSPY_PROXY")
+        proxy_env = os.getenv("JOBSPY_PROXY")
+        proxy = parse_proxy_string(proxy_env)
+        
         if proxy:
-            print("[JobSpy] Using configured proxy server/API key.", flush=True)
-            import ssl
-            import urllib3
-            try:
-                ssl._create_default_https_context = ssl._create_unverified_context
-                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            num_proxies = len(proxy) if isinstance(proxy, list) else 1
+            print(f"[JobSpy] Using configured proxy settings ({num_proxies} proxies loaded).", flush=True)
+            
+            # Selectively bypass SSL verification only if ScraperAPI is active
+            is_scraperapi = False
+            if isinstance(proxy, str) and "scraperapi" in proxy:
+                is_scraperapi = True
+            elif isinstance(proxy, list) and any("scraperapi" in p for p in proxy):
+                is_scraperapi = True
                 
-                # Monkey-patch requests
-                import requests
-                original_request = requests.Session.request
-                def unverified_request(self, *args, **kwargs):
-                    kwargs['verify'] = False
-                    return original_request(self, *args, **kwargs)
-                requests.Session.request = unverified_request
-                
-                # Monkey-patch httpx Client
-                import httpx
-                original_init = httpx.Client.__init__
-                def unverified_client_init(self, *args, **kwargs):
-                    kwargs['verify'] = False
-                    original_init(self, *args, **kwargs)
-                httpx.Client.__init__ = unverified_client_init
-                
-                # Monkey-patch httpx AsyncClient
-                original_async_init = httpx.AsyncClient.__init__
-                def unverified_async_client_init(self, *args, **kwargs):
-                    kwargs['verify'] = False
-                    original_async_init(self, *args, **kwargs)
-                httpx.AsyncClient.__init__ = unverified_async_client_init
-                
-                print("[JobSpy] Globally disabled SSL certificate verification for proxy routing.", flush=True)
-            except Exception as e:
-                print(f"⚠️ Failed to disable SSL verification: {e}", flush=True)
+            if is_scraperapi:
+                import ssl
+                import urllib3
+                try:
+                    ssl._create_default_https_context = ssl._create_unverified_context
+                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                    
+                    # Monkey-patch requests
+                    import requests
+                    original_request = requests.Session.request
+                    def unverified_request(self, *args, **kwargs):
+                        kwargs['verify'] = False
+                        return original_request(self, *args, **kwargs)
+                    requests.Session.request = unverified_request
+                    
+                    # Monkey-patch httpx Client
+                    import httpx
+                    original_init = httpx.Client.__init__
+                    def unverified_client_init(self, *args, **kwargs):
+                        kwargs['verify'] = False
+                        original_init(self, *args, **kwargs)
+                    httpx.Client.__init__ = unverified_client_init
+                    
+                    # Monkey-patch httpx AsyncClient
+                    original_async_init = httpx.AsyncClient.__init__
+                    def unverified_async_client_init(self, *args, **kwargs):
+                        kwargs['verify'] = False
+                        original_async_init(self, *args, **kwargs)
+                    httpx.AsyncClient.__init__ = unverified_async_client_init
+                    
+                    print("[JobSpy] Globally disabled SSL certificate verification for ScraperAPI routing.", flush=True)
+                except Exception as e:
+                    print(f"⚠️ Failed to disable SSL verification: {e}", flush=True)
         else:
             proxy = None
             
