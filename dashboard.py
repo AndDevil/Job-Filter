@@ -6,6 +6,12 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # 1. Page Configuration
 st.set_page_config(
     page_title="Personal Job Tracker",

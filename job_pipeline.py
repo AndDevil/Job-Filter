@@ -20,6 +20,12 @@ import os
 import sys
 import time
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # Reconfigure stdout/stderr to UTF-8 to prevent UnicodeEncodeErrors on Windows
 if hasattr(sys.stdout, 'reconfigure'):
     try:

@@ -19,3 +19,6 @@ job_history/
 # OS metadata
 .DS_Store
 Thumbs.db
+
+# Environment secret tokens
+.env

@@ -7,3 +7,4 @@ psycopg2-binary
 pypdf
 spacy
 google-generativeai
+python-dotenv
