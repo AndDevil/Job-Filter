@@ -3,12 +3,11 @@
 Job Aggregation Pipeline Script
 -------------------------------
 Aggregates, standardizes, deduplicates, and filters job listings from:
-1. JobHive (Greenhouse, Lever, Ashby, etc.)
-2. JobSpy (LinkedIn, Indeed, Glassdoor, Google, ZipRecruiter)
-3. JobSeek (jobseek.dev API)
+1. JobSpy (LinkedIn, Indeed, Glassdoor, Google, ZipRecruiter)
+2. JobSeek (jobseek.dev API)
 
 Installation:
-    pip install "ats-scrapers[parquet]" python-jobspy pandas requests
+    pip install python-jobspy pandas requests
 
 Note on Python 3.14 / NumPy Compatibility:
     On modern Python versions (e.g., 3.14+), JobSpy's legacy pinned NumPy 1.26.3
@@ -125,13 +124,6 @@ RESULTS_WANTED = 50  # per source
 # Optional: Require free API key from jobseek.dev. If empty, skips gracefully.
 JOBSEEK_API_KEY = ""
 
-# JobHive Optimization:
-# The full JobHive dataset snapshot is ~1.36 GB (all.parquet).
-# Setting JOBHIVE_USE_FULL_SNAPSHOT = False searches specific major ATS slices.
-# Setting it to True downloads the full process-wide cached snapshot.
-JOBHIVE_USE_FULL_SNAPSHOT = False
-JOBHIVE_ATS_LIST = ["greenhouse", "lever", "ashby", "bamboohr", "workable", "ycombinator"]
-
 # SCORING WEIGHTS & PARAMETERS
 SCORE_REMOTE_BONUS = 10
 SCORE_TECH_KEYWORDS = ["python", "typescript", "go", "rust", "react", "node", "django", "fastapi", "aws", "docker", "kubernetes"]
@@ -168,53 +160,6 @@ SCHEMA_COLUMNS = [
 # STANDARDIZATION SCHEMAS
 # ==========================================
 
-def standardize_jobhive(df):
-    """Maps JobHive columns to standard schema."""
-    if df is None or df.empty:
-        return pd.DataFrame(columns=SCHEMA_COLUMNS)
-    
-    standardized = pd.DataFrame()
-    standardized['job_title'] = df['title'] if 'title' in df.columns else pd.Series(dtype='object')
-    standardized['company'] = df['company'] if 'company' in df.columns else pd.Series(dtype='object')
-    standardized['location'] = df['location'] if 'location' in df.columns else pd.Series(dtype='object')
-    
-    # Prioritize URL column, fallback to apply_url
-    if 'url' in df.columns:
-        standardized['url'] = df['url']
-    elif 'apply_url' in df.columns:
-        standardized['url'] = df['apply_url']
-    else:
-        standardized['url'] = pd.Series(dtype='object')
-        
-    standardized['description'] = df['description'] if 'description' in df.columns else pd.Series(dtype='object')
-    
-    # Normalize posted date to YYYY-MM-DD
-    if 'posted_at' in df.columns:
-        standardized['posted'] = pd.to_datetime(df['posted_at'], errors='coerce', utc=True).dt.strftime('%Y-%m-%d')
-    else:
-        standardized['posted'] = pd.Series(dtype='object')
-        
-    standardized['salary_min'] = df['salary_min'] if 'salary_min' in df.columns else pd.Series(dtype='float64')
-    standardized['salary_max'] = df['salary_max'] if 'salary_max' in df.columns else pd.Series(dtype='float64')
-    
-    # Boolean remote indicator
-    if 'is_remote' in df.columns:
-        standardized['is_remote'] = df['is_remote'].fillna(False).astype(bool)
-    else:
-        standardized['is_remote'] = standardized['location'].fillna("").astype(str).str.lower().str.contains("remote")
-        
-    # Append the sub-ATS to the source name
-    if 'ats_type' in df.columns:
-        standardized['source'] = df['ats_type'].apply(lambda x: f"jobhive/{x}" if pd.notna(x) else "jobhive")
-    else:
-        standardized['source'] = "jobhive"
-        
-    # Enforce standard columns
-    for col in SCHEMA_COLUMNS:
-        if col not in standardized.columns:
-            standardized[col] = None
-            
-    return standardized[SCHEMA_COLUMNS]
 
 
 def standardize_jobspy(df):
@@ -304,39 +249,7 @@ def standardize_jobseek(df):
 # FETCHING FUNCTIONS WITH EXCEPTION HANDLING
 # ==========================================
 
-def fetch_jobhive(search_term, location, results_wanted, ats_list, use_full_snapshot):
-    """Fetches job details from jobhive dataset snapshots."""
-    print("🚀 [JobHive] Starting scraper run...", flush=True)
-    try:
-        from ats_scrapers import search
-        
-        if use_full_snapshot:
-            print("[JobHive] Loading full dataset (~1.36 GB snapshot). This may take time...", flush=True)
-            df = search(query=search_term, location=location, limit=results_wanted)
-            print(f"✅ [JobHive] Loaded {len(df)} postings from full snapshot.", flush=True)
-            return df
-        else:
-            print(f"[JobHive] Querying subset ATS systems: {ats_list}", flush=True)
-            dfs = []
-            for ats in ats_list:
-                print(f"  - Scraping ATS: {ats:15}...", end="", flush=True)
-                start_time = time.time()
-                try:
-                    df_ats = search(query=search_term, location=location, ats=ats, limit=results_wanted)
-                    dfs.append(df_ats)
-                    elapsed = time.time() - start_time
-                    print(f" ✅ SUCCESS ({len(df_ats)} jobs in {elapsed:.1f}s)", flush=True)
-                except Exception as e:
-                    print(f" ❌ FAILED ({e})", flush=True)
-            if dfs:
-                combined = pd.concat(dfs, ignore_index=True)
-                print(f"✅ [JobHive] Total raw jobs gathered: {len(combined)}", flush=True)
-                return combined
-            return pd.DataFrame()
-            
-    except Exception as e:
-        print(f"❌ [JobHive] General scraper error encountered: {e}", flush=True)
-        return pd.DataFrame()
+
 
 
 def parse_proxy_string(proxy_env):
@@ -539,20 +452,18 @@ def score_job(row, config=None):
 def deduplicate_jobs(df):
     """
     Deduplicates records based on title, company, and location.
-    Priority order is maintained as: jobhive > jobseek > jobspy
+    Priority order is maintained as: jobseek > jobspy
     """
     if df.empty:
         return df
         
     def get_source_priority(source_val):
         s = str(source_val).lower()
-        if s.startswith("jobhive"):
+        if s.startswith("jobseek"):
             return 1
-        elif s.startswith("jobseek"):
-            return 2
         elif s.startswith("jobspy"):
-            return 3
-        return 4
+            return 2
+        return 3
         
     df = df.copy()
     
@@ -667,13 +578,10 @@ def main():
     print("-" * 80, flush=True)
     
     # Phase 1: Retrieve raw data
-    print("[PROGRESS] 10 Scraping JobHive career pages...", flush=True)
-    raw_jh = fetch_jobhive(search_term_val, location_val, results_wanted_val, JOBHIVE_ATS_LIST, JOBHIVE_USE_FULL_SNAPSHOT)
-    print()
-    print("[PROGRESS] 35 Scraping LinkedIn, Indeed, Glassdoor...", flush=True)
+    print("[PROGRESS] 15 Scraping LinkedIn, Indeed, Glassdoor...", flush=True)
     raw_js = fetch_jobspy(search_term_val, location_val, results_wanted_val)
     print()
-    print("[PROGRESS] 60 Scraping JobSeek API...", flush=True)
+    print("[PROGRESS] 55 Scraping JobSeek API...", flush=True)
     raw_jk = fetch_jobseek(search_term_val, JOBSEEK_API_KEY, results_wanted_val)
     
     # Phase 2: Standardize schemas
@@ -682,19 +590,18 @@ def main():
     print("⚙️ STANDARDIZING SCHEMAS TO COMMON TARGET FORMAT")
     print("-" * 80, flush=True)
     
-    df_jh = standardize_jobhive(raw_jh)
     df_js = standardize_jobspy(raw_js)
     df_jk = standardize_jobseek(raw_jk)
     
-    print(f"Standardized records - JobHive: {len(df_jh)} | JobSeek: {len(df_jk)} | JobSpy: {len(df_js)}", flush=True)
+    print(f"Standardized records - JobSeek: {len(df_jk)} | JobSpy: {len(df_js)}", flush=True)
     
     # Phase 3: Combine and Deduplicate
     print("[PROGRESS] 82 Deduplicating job listings...", flush=True)
     print("\n" + "-" * 80)
-    print("🔄 MERGING & DEDUPLICATING ENTRIES (Priority: JobHive > JobSeek > JobSpy)")
+    print("🔄 MERGING & DEDUPLICATING ENTRIES (Priority: JobSeek > JobSpy)")
     print("-" * 80, flush=True)
     
-    combined_raw = pd.concat([df_jh, df_jk, df_js], ignore_index=True)
+    combined_raw = pd.concat([df_jk, df_js], ignore_index=True)
     deduped_all = deduplicate_jobs(combined_raw)
     
     print(f"Raw Combined Total: {len(combined_raw)} records")

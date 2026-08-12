@@ -42,7 +42,7 @@ pip install -r requirements.txt --quiet
 if errorlevel 1 (
     echo [WARNING] Standard requirements installation failed. Attempting Python 3.14+ compatibility installation...
     pip install --no-deps python-jobspy --quiet
-    pip install pandas requests streamlit plotly ats-scrapers[parquet] numpy beautifulsoup4 markdownify regex tls-client --quiet
+    pip install pandas requests streamlit plotly numpy beautifulsoup4 markdownify regex tls-client --quiet
 )
 echo [SUCCESS] Dependencies verified and installed.
 

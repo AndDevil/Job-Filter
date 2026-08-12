@@ -1,4 +1,3 @@
-ats-scrapers[parquet]
 python-jobspy
 pandas
 requests
