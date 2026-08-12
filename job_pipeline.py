@@ -651,6 +651,7 @@ def send_discord_notification(job):
 # ==========================================
 
 def main():
+    print("[PROGRESS] 5 Initializing pipeline...", flush=True)
     print("=" * 80)
     print("                 JOB FILTER AGGREGATION SERVICE PIPELINE                     ")
     print("=" * 80)
@@ -666,13 +667,17 @@ def main():
     print("-" * 80, flush=True)
     
     # Phase 1: Retrieve raw data
+    print("[PROGRESS] 10 Scraping JobHive career pages...", flush=True)
     raw_jh = fetch_jobhive(search_term_val, location_val, results_wanted_val, JOBHIVE_ATS_LIST, JOBHIVE_USE_FULL_SNAPSHOT)
     print()
+    print("[PROGRESS] 35 Scraping LinkedIn, Indeed, Glassdoor...", flush=True)
     raw_js = fetch_jobspy(search_term_val, location_val, results_wanted_val)
     print()
+    print("[PROGRESS] 60 Scraping JobSeek API...", flush=True)
     raw_jk = fetch_jobseek(search_term_val, JOBSEEK_API_KEY, results_wanted_val)
     
     # Phase 2: Standardize schemas
+    print("[PROGRESS] 75 Standardizing scraped formats...", flush=True)
     print("\n" + "-" * 80)
     print("⚙️ STANDARDIZING SCHEMAS TO COMMON TARGET FORMAT")
     print("-" * 80, flush=True)
@@ -684,6 +689,7 @@ def main():
     print(f"Standardized records - JobHive: {len(df_jh)} | JobSeek: {len(df_jk)} | JobSpy: {len(df_js)}", flush=True)
     
     # Phase 3: Combine and Deduplicate
+    print("[PROGRESS] 82 Deduplicating job listings...", flush=True)
     print("\n" + "-" * 80)
     print("🔄 MERGING & DEDUPLICATING ENTRIES (Priority: JobHive > JobSeek > JobSpy)")
     print("-" * 80, flush=True)
@@ -695,6 +701,7 @@ def main():
     print(f"Deduplicated Total: {len(deduped_all)} records", flush=True)
     
     # Calculate score for ALL jobs in pipeline using dynamic config
+    print("[PROGRESS] 88 Calculating relevance scores...", flush=True)
     print("🔢 Calculating relevance scores...", flush=True)
     deduped_all["score"] = deduped_all.apply(score_job, axis=1, args=(config,))
     
@@ -702,6 +709,7 @@ def main():
     deduped_all = deduped_all.sort_values(by=["score", "posted"], ascending=[False, False])
     
     # Phase 3.5: Save outputs with timestamped history archiving
+    print("[PROGRESS] 92 Archiving and saving datasets...", flush=True)
     history_dir = "job_history"
     if not os.path.exists(history_dir):
         os.makedirs(history_dir)
@@ -757,6 +765,7 @@ def main():
         print("✅ No history files older than 30 days found.", flush=True)
         
     # Phase 4.5: Sync to Supabase PostgreSQL (if SUPABASE_DB_URL is set)
+    print("[PROGRESS] 95 Syncing database and alerts...", flush=True)
     db_url = os.getenv("SUPABASE_DB_URL")
     if db_url:
         db_url = db_url.strip()
@@ -938,6 +947,7 @@ def main():
     else:
         print("(No relevant jobs found)")
         
+    print("[PROGRESS] 100 Scraper pipeline complete!", flush=True)
     print("\n" + "=" * 80)
     print("🎉 JOB FILTER PIPELINE EXECUTION COMPLETE")
     print("=" * 80, flush=True)

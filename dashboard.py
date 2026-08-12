@@ -749,21 +749,56 @@ with tab_settings:
             time.sleep(1)
             st.rerun()
             
+            
     with col_act2:
         if st.button("🚀 Trigger Scraper Pipeline Now", use_container_width=True):
             import subprocess
             import sys
-            with st.spinner("Running Job Filter Pipeline... This may take a minute..."):
-                try:
-                    result = subprocess.run([sys.executable, "job_pipeline.py"], capture_output=True, text=True, encoding="utf-8")
-                    if result.returncode == 0:
-                        st.success("✅ Scraper Pipeline Completed Successfully!")
-                        st.cache_data.clear()
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error("❌ Scraper run failed.")
-                        st.text_area("Error Logs", value=result.stderr, height=200)
-                except Exception as e:
-                    st.error(f"❌ Failed to launch pipeline process: {e}")
+            import re
+            
+            # Create a progress bar placeholder
+            progress_bar = st.progress(0, text="🚀 Starting Scraper Pipeline...")
+            
+            try:
+                # Launch the pipeline process as a subprocess
+                process = subprocess.Popen(
+                    [sys.executable, "job_pipeline.py"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    encoding="utf-8",
+                    bufsize=1  # Line buffered
+                )
+                
+                # Read stdout in real-time
+                while True:
+                    line = process.stdout.readline()
+                    if not line and process.poll() is not None:
+                        break
+                    if line:
+                        # Search for progress markers (e.g. [PROGRESS] 50 Scraping Indeed...)
+                        match = re.search(r"\[PROGRESS\]\s+(\d+)\s*(.*)", line)
+                        if match:
+                            percent = int(match.group(1))
+                            desc = match.group(2).strip()
+                            if not desc:
+                                desc = f"Running scraper... {percent}%"
+                            
+                            progress_bar.progress(percent, text=f"⚡ {desc}")
+                
+                # Get process result
+                stdout, stderr = process.communicate()
+                
+                if process.returncode == 0:
+                    progress_bar.progress(100, text="✅ Scraper Pipeline Completed Successfully!")
+                    st.success("✅ Scraper Pipeline Completed Successfully!")
+                    st.cache_data.clear()
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("❌ Scraper run failed.")
+                    st.text_area("Error Logs (stderr)", value=stderr, height=200)
+                    st.text_area("Console Output (stdout)", value=stdout, height=200)
+            except Exception as e:
+                st.error(f"❌ Failed to launch pipeline process: {e}")
 
