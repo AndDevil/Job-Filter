@@ -51,13 +51,16 @@ jobs:
         git config --global user.name "github-actions[bot]"
         git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
         
-        # Add generated CSVs and history folder (including sent_alerts.txt)
-        git add relevant_jobs.csv all_jobs_combined.csv job_history/
+        # Checkout master to avoid detached HEAD
+        git checkout master
+        
+        # Force add generated CSVs and history folder (which are ignored by local gitignore)
+        git add -f relevant_jobs.csv all_jobs_combined.csv job_history/
         
         # Commit and push only if there are changes
         if ! git diff --cached --quiet; then
           git commit -m "chore: auto-update scraped jobs and alert logs [skip ci]"
-          git push
+          git push origin master
         else
           echo "No changes to commit."
         fi
