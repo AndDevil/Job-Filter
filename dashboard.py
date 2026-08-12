@@ -45,6 +45,118 @@ def check_password():
 if not check_password():
     st.stop()
 
+# --- Resume Parser Utilities ---
+def extract_text_from_file(uploaded_file):
+    if uploaded_file.name.endswith(".pdf"):
+        import pypdf
+        reader = pypdf.PdfReader(uploaded_file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() or ""
+        return text
+    else:
+        # Plain text
+        return uploaded_file.read().decode("utf-8", errors="ignore")
+
+def parse_resume_spacy(text):
+    import spacy
+    import subprocess
+    import sys
+    
+    # 1. Load spaCy model (auto-download if missing)
+    try:
+        nlp = spacy.load("en_core_web_sm")
+    except OSError:
+        with st.spinner("Downloading language model en_core_web_sm..."):
+            subprocess.run([sys.executable, "-m", "spacy", "download", "en_core_web_sm"], capture_output=True)
+            nlp = spacy.load("en_core_web_sm")
+            
+    doc = nlp(text)
+    
+    # 2. Extract job title from noun chunks containing role keywords
+    job_titles = []
+    role_markers = ["engineer", "developer", "scientist", "analyst", "manager", "designer", "architect", "programmer"]
+    for chunk in doc.noun_chunks:
+        chunk_text = chunk.text.lower().strip()
+        if any(role in chunk_text for role in role_markers):
+            job_titles.append(chunk.text.strip())
+            
+    # Deduplicate and count occurrences
+    from collections import Counter
+    title_counts = Counter(job_titles)
+    recommended_title = "software engineer"
+    if job_titles:
+        recommended_title = title_counts.most_common(1)[0][0]
+        
+    # 3. Extract skills matching our tech stack dictionary
+    SKILLS_DB = {
+        "python", "typescript", "javascript", "golang", "go", "rust", "react", "vue", "angular", "node", "nodejs", 
+        "django", "flask", "fastapi", "aws", "gcp", "azure", "docker", "kubernetes", "sql", "postgresql", 
+        "mysql", "sqlite", "mongodb", "redis", "elasticsearch", "html", "css", "git", "linux", "spark", "hadoop",
+        "c++", "c#", "java", "ruby", "rails", "php", "laravel", "spring", "dotnet", "tensorflow", "pytorch",
+        "pandas", "numpy", "scikit-learn", "keras"
+    }
+    
+    extracted_skills = []
+    for token in doc:
+        token_text = token.text.lower()
+        if token_text in SKILLS_DB:
+            if token_text == "nodejs":
+                token_text = "node"
+            extracted_skills.append(token_text)
+            
+    extracted_skills = sorted(list(set(extracted_skills)))
+    
+    # 4. Check for startup and seniority keywords
+    text_lower = text.lower()
+    has_startup = any(kw in text_lower for kw in ["startup", "co-founder", "series a", "series b", "early-stage", "funding"])
+    has_senior = any(kw in text_lower for kw in ["senior", "lead", "staff", "principal"])
+    
+    return {
+        "search_term": recommended_title,
+        "location": "United States",
+        "tech_keywords": extracted_skills if extracted_skills else ["python", "typescript"],
+        "has_startup": has_startup,
+        "has_senior": has_senior
+    }
+
+def parse_resume_gemini(text, api_key):
+    import google.generativeai as genai
+    import json
+    
+    genai.configure(api_key=api_key)
+    
+    prompt = f"""
+    Analyze the following resume text and extract job search configurations.
+    Respond with a raw JSON object containing these keys:
+    - "search_term": (string) The single most relevant target job title (e.g. "Software Engineer", "Data Scientist", "Backend Developer").
+    - "location": (string) The target location if mentioned, or default to "United States".
+    - "tech_keywords": (list of strings) List of programming languages, frameworks, databases, and DevOps tools explicitly mentioned (lowercase).
+    - "has_startup": (boolean) True if they have experience in startups or early-stage/funded companies.
+    - "has_senior": (boolean) True if they are a senior, lead, staff, or principal level candidate.
+    
+    Resume Text:
+    {text}
+    """
+    
+    try:
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(
+            prompt,
+            generation_config={"response_mime_type": "application/json"}
+        )
+        data = json.loads(response.text)
+        return {
+            "search_term": data.get("search_term", "software engineer"),
+            "location": data.get("location", "United States"),
+            "tech_keywords": data.get("tech_keywords", []),
+            "has_startup": data.get("has_startup", False),
+            "has_senior": data.get("has_senior", False)
+        }
+    except Exception as e:
+        st.warning(f"⚠️ Gemini resume parsing failed: {e}. Falling back to spaCy.")
+        return None
+
 # --- PostgreSQL Caching and Configuration ---
 SUPABASE_DB_URL = os.getenv("SUPABASE_DB_URL")
 if SUPABASE_DB_URL:
@@ -656,12 +768,85 @@ with tab_settings:
     # Load current configuration
     current_config = load_config()
     
+    # Initialize session state variables from DB config if not present
+    if "form_search_term" not in st.session_state:
+        st.session_state["form_search_term"] = current_config.get("search_term", "software engineer")
+    if "form_location" not in st.session_state:
+        st.session_state["form_location"] = current_config.get("location", "United States")
+    if "form_tech_keywords" not in st.session_state:
+        st.session_state["form_tech_keywords"] = ", ".join(current_config.get("tech_keywords", []))
+    if "form_score_senior_bonus" not in st.session_state:
+        st.session_state["form_score_senior_bonus"] = current_config.get("score_senior_bonus", 5)
+    if "form_score_startup_bonus" not in st.session_state:
+        st.session_state["form_score_startup_bonus"] = current_config.get("score_startup_bonus", 4)
+        
+    # --- Resume Uploader Expander ---
+    with st.expander("📄 Auto-Configure via Resume Upload", expanded=False):
+        st.write("Upload your resume (PDF or TXT) to automatically scan for skills, target roles, and optimize the scoring weights matching your experience.")
+        
+        uploaded_file = st.file_uploader("Choose a file", type=["pdf", "txt"], key="resume_uploader")
+        
+        if uploaded_file is not None:
+            if st.button("🔍 Scan & Parse Resume", use_container_width=True):
+                with st.spinner("Extracting profile from resume..."):
+                    resume_text = extract_text_from_file(uploaded_file)
+                    if resume_text.strip():
+                        # Determine parser engine (Gemini premium or spaCy local fallback)
+                        api_key = os.getenv("GEMINI_API_KEY")
+                        profile = None
+                        if api_key:
+                            st.info("🤖 Using premium Gemini AI parser...")
+                            profile = parse_resume_gemini(resume_text, api_key)
+                        
+                        if profile is None:
+                            st.info("⚙️ Using local spaCy NLP parser fallback...")
+                            profile = parse_resume_spacy(resume_text)
+                            
+                        if profile:
+                            st.session_state["parsed_profile"] = profile
+                            st.success("✅ Profile parsed successfully! Preview the settings below.")
+                    else:
+                        st.error("❌ Could not extract text from the uploaded file.")
+                        
+        if "parsed_profile" in st.session_state:
+            prof = st.session_state["parsed_profile"]
+            with st.container(border=True):
+                st.markdown("#### **Parsed Resume Profile**")
+                col_p1, col_p2 = st.columns(2)
+                with col_p1:
+                    st.write(f"💼 **Recommended Search Title:** `{prof['search_term']}`")
+                    st.write(f"📍 **Target Location:** `{prof['location']}`")
+                    st.write(f"🌟 **Seniority Level:** `{'Senior/Lead' if prof['has_senior'] else 'Junior/Mid'}`")
+                    st.write(f"🚀 **Startup Experience:** `{'Yes' if prof['has_startup'] else 'No'}`")
+                with col_p2:
+                    st.write(f"💻 **Extracted Tech Skills:** {', '.join(prof['tech_keywords'])}")
+                    
+                if st.button("Apply Profile to Form", use_container_width=True):
+                    st.session_state["form_search_term"] = prof['search_term']
+                    st.session_state["form_location"] = prof['location']
+                    st.session_state["form_tech_keywords"] = ", ".join(prof['tech_keywords'])
+                    
+                    if prof['has_senior']:
+                        st.session_state["form_score_senior_bonus"] = 8
+                    else:
+                        st.session_state["form_score_senior_bonus"] = 5
+                        
+                    if prof['has_startup']:
+                        st.session_state["form_score_startup_bonus"] = 6
+                    else:
+                        st.session_state["form_score_startup_bonus"] = 4
+                        
+                    st.success("Applied settings to form! Click 'Save Configurations' below to write them to the database.")
+                    st.rerun()
+                    
+    st.markdown("---")
+    
     # Create forms/columns
     col_search, col_notif = st.columns(2)
     with col_search:
         st.subheader("🔍 Search Target")
-        new_search_term = st.text_input("Search Term", value=current_config.get("search_term", "software engineer"))
-        new_location = st.text_input("Location", value=current_config.get("location", "United States"))
+        new_search_term = st.text_input("Search Term", value=st.session_state["form_search_term"])
+        new_location = st.text_input("Location", value=st.session_state["form_location"])
         new_results_wanted = st.number_input("Results wanted per source", min_value=1, max_value=200, value=current_config.get("results_wanted", 50))
         
     with col_notif:
@@ -677,12 +862,12 @@ with tab_settings:
         st.markdown("**Bonuses**")
         new_score_remote_bonus = st.number_input("Remote suitability bonus", value=current_config.get("score_remote_bonus", 10))
         new_score_tech_bonus = st.number_input("Tech stack match bonus", value=current_config.get("score_tech_bonus", 8))
-        new_score_senior_bonus = st.number_input("Senior/Lead title bonus", value=current_config.get("score_senior_bonus", 5))
+        new_score_senior_bonus = st.number_input("Senior/Lead title bonus", value=st.session_state["form_score_senior_bonus"])
         
     with col_w2:
         st.markdown("**Company Bonuses**")
         new_score_top_tier_bonus = st.number_input("Top-tier company bonus", value=current_config.get("score_top_tier_bonus", 5))
-        new_score_startup_bonus = st.number_input("Startup mentions bonus", value=current_config.get("score_startup_bonus", 4))
+        new_score_startup_bonus = st.number_input("Startup mentions bonus", value=st.session_state["form_score_startup_bonus"])
         new_score_salary_bonus = st.number_input("High salary bonus", value=current_config.get("score_salary_bonus", 3))
         
     with col_w3:
@@ -696,7 +881,7 @@ with tab_settings:
     
     new_tech_keywords = st.text_area(
         "Technology Stack Keywords (comma-separated)",
-        value=", ".join(current_config.get("tech_keywords", []))
+        value=st.session_state["form_tech_keywords"]
     )
     
     new_top_tier_companies = st.text_area(
@@ -745,6 +930,9 @@ with tab_settings:
                 "salary_threshold": int(new_salary_threshold)
             }
             save_config(updated_config)
+            # Remove keys so they are re-read on reload from database config
+            for key in ["form_search_term", "form_location", "form_tech_keywords", "form_score_senior_bonus", "form_score_startup_bonus", "parsed_profile"]:
+                st.session_state.pop(key, None)
             st.cache_data.clear()
             time.sleep(1)
             st.rerun()

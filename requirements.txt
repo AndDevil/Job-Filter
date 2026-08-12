@@ -5,3 +5,6 @@ requests
 streamlit
 plotly
 psycopg2-binary
+pypdf
+spacy
+google-generativeai
