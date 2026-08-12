@@ -1,6 +1,7 @@
 import os
 import time
 import sqlite3
+import json
 import pandas as pd
 import streamlit as st
 import plotly.express as px
@@ -128,6 +129,12 @@ def init_db():
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
+                c.execute("""
+                    CREATE TABLE IF NOT EXISTS settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT
+                    );
+                """)
                 conn.commit()
         except Exception as e:
             st.error(f"Failed to initialize PostgreSQL tables: {e}")
@@ -142,8 +149,85 @@ def init_db():
                 applied_date TEXT
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+        """)
         conn.commit()
         conn.close()
+
+DEFAULT_CONFIG = {
+    "search_term": "software engineer",
+    "location": "United States",
+    "results_wanted": 50,
+    "min_notification_score": 85,
+    "score_remote_bonus": 10,
+    "score_tech_bonus": 8,
+    "score_senior_bonus": 5,
+    "score_top_tier_bonus": 5,
+    "score_startup_bonus": 4,
+    "score_salary_bonus": 3,
+    "score_contract_penalty": -10,
+    "score_junior_java_penalty": -8,
+    "score_remote_false_penalty": -5,
+    "tech_keywords": ["python", "typescript", "go", "rust", "react", "node", "django", "fastapi", "aws", "docker", "kubernetes"],
+    "senior_title_keywords": ["senior", "lead"],
+    "top_tier_companies": ["google", "microsoft", "apple", "amazon", "meta", "stripe", "anthropic", "openai", "figma", "vercel"],
+    "startup_keywords": ["startup", "series", "funding", "early-stage"],
+    "salary_threshold": 120000
+}
+
+def load_config():
+    config = DEFAULT_CONFIG.copy()
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT key, value FROM settings;")
+            rows = c.fetchall()
+            
+            if not rows:
+                # Seed defaults
+                for k, v in DEFAULT_CONFIG.items():
+                    val_str = json.dumps(v)
+                    if SUPABASE_DB_URL and psycopg2:
+                        c.execute("INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING;", (k, val_str))
+                    else:
+                        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?);", (k, val_str))
+                conn.commit()
+            else:
+                for key, val_str in rows:
+                    try:
+                        config[key] = json.loads(val_str)
+                    except Exception:
+                        config[key] = val_str
+    except Exception as e:
+        st.warning(f"⚠️ Failed to load configuration from DB: {e}. Using code defaults.")
+    return config
+
+def save_config(config_dict):
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            for k, v in config_dict.items():
+                val_str = json.dumps(v)
+                if SUPABASE_DB_URL and psycopg2:
+                    c.execute("""
+                        INSERT INTO settings (key, value)
+                        VALUES (%s, %s)
+                        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+                    """, (k, val_str))
+                else:
+                    c.execute("""
+                        INSERT INTO settings (key, value)
+                        VALUES (?, ?)
+                        ON CONFLICT (key) DO UPDATE SET value = excluded.value;
+                    """, (k, val_str))
+            conn.commit()
+            st.success("✅ Configurations saved successfully!")
+    except Exception as e:
+        st.error(f"❌ Failed to save configuration: {e}")
 
 def get_tracker_data():
     conn = sqlite3.connect(DB_FILE)
@@ -472,92 +556,214 @@ if not filtered_df.empty:
     st.sidebar.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 # 7. Main Panel Display
-if filtered_df.empty:
-    st.info("No jobs match the selected filter criteria. Try expanding your search!")
-else:
-    st.subheader(f"Showing {len(filtered_df)} Scored Job Listings")
-    
-    for idx, row in filtered_df.iterrows():
-        key_prefix = f"job_{idx}"
-        url = row['url']
+tab_jobs, tab_settings = st.tabs(["💼 Job Listings & Tracker", "⚙️ Pipeline Settings"])
+
+with tab_jobs:
+    if filtered_df.empty:
+        st.info("No jobs match the selected filter criteria. Try expanding your search!")
+    else:
+        st.subheader(f"Showing {len(filtered_df)} Scored Job Listings")
         
-        # Display each job in a bordered container card
-        with st.container(border=True):
-            col_title, col_score = st.columns([5, 1])
-            with col_title:
-                st.markdown(f"### {row['job_title']}")
-                st.markdown(f"🏢 **{row['company']}**")
-            with col_score:
-                score_val = int(row['score']) if pd.notna(row['score']) else 0
-                if score_val >= 90:
-                    badge_class = "score-badge-very-high"
-                elif score_val >= 80:
-                    badge_class = "score-badge-high"
-                else:
-                    badge_class = "score-badge"
-                st.markdown(f"<div style='text-align: right;'><span class='{badge_class}'>Score: {score_val}</span></div>", unsafe_allow_html=True)
+        for idx, row in filtered_df.iterrows():
+            key_prefix = f"job_{idx}"
+            url = row['url']
             
-            # Badges metadata row
-            badges = []
-            if pd.notna(row['location']):
-                badges.append(f"📍 {row['location']}")
-            if pd.notna(row['country']) and row['country'] != row['location']:
-                badges.append(f"🌍 {row['country']}")
-            if row['is_remote']:
-                badges.append("🌐 Remote")
-            if pd.notna(row['source']):
-                badges.append(f"🔍 {row['source']}")
-            if pd.notna(row['posted']):
-                badges.append(f"📅 Posted: {row['posted']}")
-            st.markdown(" | ".join(badges))
-            
-            # Optional Salary info
-            salary_info = []
-            if pd.notna(row['salary_min']) and row['salary_min'] > 0:
-                salary_info.append(f"Min: ${row['salary_min']:,.0f}")
-            if pd.notna(row['salary_max']) and row['salary_max'] > 0:
-                salary_info.append(f"Max: ${row['salary_max']:,.0f}")
-            if salary_info:
-                st.markdown(f"💵 **Salary**: {' - '.join(salary_info)}")
-            
-            # Expander for Description
-            if pd.notna(row['description']):
-                with st.expander("📄 View Job Description"):
-                    st.write(row['description'])
-            
-            # Status dropdown, notes input and apply button row
-            st.markdown("<br>", unsafe_allow_html=True)
-            col_sel, col_notes, col_btn = st.columns([2, 3, 1])
-            with col_sel:
-                current_status = row['status']
-                if current_status not in status_opts:
-                    current_status = "New"
-                idx_status = status_opts.index(current_status)
+            # Display each job in a bordered container card
+            with st.container(border=True):
+                col_title, col_score = st.columns([5, 1])
+                with col_title:
+                    st.markdown(f"### {row['job_title']}")
+                    st.markdown(f"🏢 **{row['company']}**")
+                with col_score:
+                    score_val = int(row['score']) if pd.notna(row['score']) else 0
+                    if score_val >= 90:
+                        badge_class = "score-badge-very-high"
+                    elif score_val >= 80:
+                        badge_class = "score-badge-high"
+                    else:
+                        badge_class = "score-badge"
+                    st.markdown(f"<div style='text-align: right;'><span class='{badge_class}'>Score: {score_val}</span></div>", unsafe_allow_html=True)
                 
-                st.selectbox(
-                    "Application Status",
-                    options=status_opts,
-                    index=idx_status,
-                    key=f"{key_prefix}_status",
-                    on_change=update_db,
-                    args=(url, key_prefix)
-                )
-                if row['applied_date']:
-                    st.caption(f"🗓️ Applied on: {row['applied_date']}")
+                # Badges metadata row
+                badges = []
+                if pd.notna(row['location']):
+                    badges.append(f"📍 {row['location']}")
+                if pd.notna(row['country']) and row['country'] != row['location']:
+                    badges.append(f"🌍 {row['country']}")
+                if row['is_remote']:
+                    badges.append("🌐 Remote")
+                if pd.notna(row['source']):
+                    badges.append(f"🔍 {row['source']}")
+                if pd.notna(row['posted']):
+                    badges.append(f"📅 Posted: {row['posted']}")
+                st.markdown(" | ".join(badges))
+                
+                # Optional Salary info
+                salary_info = []
+                if pd.notna(row['salary_min']) and row['salary_min'] > 0:
+                    salary_info.append(f"Min: ${row['salary_min']:,.0f}")
+                if pd.notna(row['salary_max']) and row['salary_max'] > 0:
+                    salary_info.append(f"Max: ${row['salary_max']:,.0f}")
+                if salary_info:
+                    st.markdown(f"💵 **Salary**: {' - '.join(salary_info)}")
+                
+                # Expander for Description
+                if pd.notna(row['description']):
+                    with st.expander("📄 View Job Description"):
+                        st.write(row['description'])
+                
+                # Status dropdown, notes input and apply button row
+                st.markdown("<br>", unsafe_allow_html=True)
+                col_sel, col_notes, col_btn = st.columns([2, 3, 1])
+                with col_sel:
+                    current_status = row['status']
+                    if current_status not in status_opts:
+                        current_status = "New"
+                    idx_status = status_opts.index(current_status)
                     
-            with col_notes:
-                st.text_input(
-                    "Application Notes",
-                    value=row['notes'],
-                    key=f"{key_prefix}_notes",
-                    on_change=update_db,
-                    args=(url, key_prefix),
-                    placeholder="Enter notes about interview, contacts, etc."
-                )
-                
-            with col_btn:
-                # Vertical spacer to align button
-                st.write("")
-                st.write("")
-                st.link_button("Apply ↗", url, use_container_width=True)
+                    st.selectbox(
+                        "Application Status",
+                        options=status_opts,
+                        index=idx_status,
+                        key=f"{key_prefix}_status",
+                        on_change=update_db,
+                        args=(url, key_prefix)
+                    )
+                    if row['applied_date']:
+                        st.caption(f"🗓️ Applied on: {row['applied_date']}")
+                        
+                with col_notes:
+                    st.text_input(
+                        "Application Notes",
+                        value=row['notes'],
+                        key=f"{key_prefix}_notes",
+                        on_change=update_db,
+                        args=(url, key_prefix),
+                        placeholder="Enter notes about interview, contacts, etc."
+                    )
+                    
+                with col_btn:
+                    # Vertical spacer to align button
+                    st.write("")
+                    st.write("")
+                    st.link_button("Apply ↗", url, use_container_width=True)
+
+with tab_settings:
+    st.markdown("### ⚙️ Pipeline Configurations")
+    st.write("Customize your job search query, scoring rules, and keyword preferences. These values are saved to the database and will be used by the scraper (both locally and on GitHub Actions).")
+    st.markdown("---")
+    
+    # Load current configuration
+    current_config = load_config()
+    
+    # Create forms/columns
+    col_search, col_notif = st.columns(2)
+    with col_search:
+        st.subheader("🔍 Search Target")
+        new_search_term = st.text_input("Search Term", value=current_config.get("search_term", "software engineer"))
+        new_location = st.text_input("Location", value=current_config.get("location", "United States"))
+        new_results_wanted = st.number_input("Results wanted per source", min_value=1, max_value=200, value=current_config.get("results_wanted", 50))
+        
+    with col_notif:
+        st.subheader("🔔 Alerts & Notifications")
+        new_min_notification_score = st.slider("Minimum score for Telegram/Discord alerts", min_value=0, max_value=100, value=current_config.get("min_notification_score", 85))
+        new_salary_threshold = st.number_input("Salary Bonus Threshold ($)", min_value=10000, max_value=500000, value=current_config.get("salary_threshold", 120000), step=5000)
+        
+    st.markdown("---")
+    st.subheader("🔢 Scoring Parameters")
+    
+    col_w1, col_w2, col_w3 = st.columns(3)
+    with col_w1:
+        st.markdown("**Bonuses**")
+        new_score_remote_bonus = st.number_input("Remote suitability bonus", value=current_config.get("score_remote_bonus", 10))
+        new_score_tech_bonus = st.number_input("Tech stack match bonus", value=current_config.get("score_tech_bonus", 8))
+        new_score_senior_bonus = st.number_input("Senior/Lead title bonus", value=current_config.get("score_senior_bonus", 5))
+        
+    with col_w2:
+        st.markdown("**Company Bonuses**")
+        new_score_top_tier_bonus = st.number_input("Top-tier company bonus", value=current_config.get("score_top_tier_bonus", 5))
+        new_score_startup_bonus = st.number_input("Startup mentions bonus", value=current_config.get("score_startup_bonus", 4))
+        new_score_salary_bonus = st.number_input("High salary bonus", value=current_config.get("score_salary_bonus", 3))
+        
+    with col_w3:
+        st.markdown("**Penalties**")
+        new_score_contract_penalty = st.number_input("Contract listing penalty", value=current_config.get("score_contract_penalty", -10))
+        new_score_junior_java_penalty = st.number_input("Junior Java penalty", value=current_config.get("score_junior_java_penalty", -8))
+        new_score_remote_false_penalty = st.number_input("Explicit non-remote penalty", value=current_config.get("score_remote_false_penalty", -5))
+        
+    st.markdown("---")
+    st.subheader("📝 Keywords & Lists")
+    
+    new_tech_keywords = st.text_area(
+        "Technology Stack Keywords (comma-separated)",
+        value=", ".join(current_config.get("tech_keywords", []))
+    )
+    
+    new_top_tier_companies = st.text_area(
+        "Top-Tier Target Companies (comma-separated, lowercase)",
+        value=", ".join(current_config.get("top_tier_companies", []))
+    )
+    
+    col_k1, col_k2 = st.columns(2)
+    with col_k1:
+        new_senior_title_keywords = st.text_area(
+            "Seniority Title Keywords (comma-separated)",
+            value=", ".join(current_config.get("senior_title_keywords", []))
+        )
+    with col_k2:
+        new_startup_keywords = st.text_area(
+            "Startup Indicators (comma-separated)",
+            value=", ".join(current_config.get("startup_keywords", []))
+        )
+        
+    # Helper parser
+    def parse_csv_list(text):
+        return [x.strip().lower() for x in text.split(",") if x.strip()]
+        
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_act1, col_act2 = st.columns(2)
+    with col_act1:
+        if st.button("💾 Save Configurations", use_container_width=True):
+            updated_config = {
+                "search_term": new_search_term.strip(),
+                "location": new_location.strip(),
+                "results_wanted": int(new_results_wanted),
+                "min_notification_score": int(new_min_notification_score),
+                "score_remote_bonus": int(new_score_remote_bonus),
+                "score_tech_bonus": int(new_score_tech_bonus),
+                "score_senior_bonus": int(new_score_senior_bonus),
+                "score_top_tier_bonus": int(new_score_top_tier_bonus),
+                "score_startup_bonus": int(new_score_startup_bonus),
+                "score_salary_bonus": int(new_score_salary_bonus),
+                "score_contract_penalty": int(new_score_contract_penalty),
+                "score_junior_java_penalty": int(new_score_junior_java_penalty),
+                "score_remote_false_penalty": int(new_score_remote_false_penalty),
+                "tech_keywords": parse_csv_list(new_tech_keywords),
+                "senior_title_keywords": parse_csv_list(new_senior_title_keywords),
+                "top_tier_companies": parse_csv_list(new_top_tier_companies),
+                "startup_keywords": parse_csv_list(new_startup_keywords),
+                "salary_threshold": int(new_salary_threshold)
+            }
+            save_config(updated_config)
+            st.cache_data.clear()
+            time.sleep(1)
+            st.rerun()
+            
+    with col_act2:
+        if st.button("🚀 Trigger Scraper Pipeline Now", use_container_width=True):
+            import subprocess
+            import sys
+            with st.spinner("Running Job Filter Pipeline... This may take a minute..."):
+                try:
+                    result = subprocess.run([sys.executable, "job_pipeline.py"], capture_output=True, text=True, encoding="utf-8")
+                    if result.returncode == 0:
+                        st.success("✅ Scraper Pipeline Completed Successfully!")
+                        st.cache_data.clear()
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ Scraper run failed.")
+                        st.text_area("Error Logs", value=result.stderr, height=200)
+                except Exception as e:
+                    st.error(f"❌ Failed to launch pipeline process: {e}")
 

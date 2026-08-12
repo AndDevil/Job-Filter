@@ -35,6 +35,80 @@ import pandas as pd
 import requests
 import psycopg2
 from psycopg2.extras import execute_values
+import sqlite3
+import json
+
+DEFAULT_CONFIG = {
+    "search_term": "software engineer",
+    "location": "United States",
+    "results_wanted": 50,
+    "min_notification_score": 85,
+    "score_remote_bonus": 10,
+    "score_tech_bonus": 8,
+    "score_senior_bonus": 5,
+    "score_top_tier_bonus": 5,
+    "score_startup_bonus": 4,
+    "score_salary_bonus": 3,
+    "score_contract_penalty": -10,
+    "score_junior_java_penalty": -8,
+    "score_remote_false_penalty": -5,
+    "tech_keywords": ["python", "typescript", "go", "rust", "react", "node", "django", "fastapi", "aws", "docker", "kubernetes"],
+    "senior_title_keywords": ["senior", "lead"],
+    "top_tier_companies": ["google", "microsoft", "apple", "amazon", "meta", "stripe", "anthropic", "openai", "figma", "vercel"],
+    "startup_keywords": ["startup", "series", "funding", "early-stage"],
+    "salary_threshold": 120000
+}
+
+def load_config():
+    db_url = os.getenv("SUPABASE_DB_URL")
+    if db_url:
+        db_url = db_url.strip()
+    
+    config = DEFAULT_CONFIG.copy()
+    
+    conn = None
+    try:
+        if db_url:
+            conn = psycopg2.connect(db_url)
+        else:
+            conn = sqlite3.connect("job_tracker.db")
+            
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+        """)
+        conn.commit()
+        
+        cursor.execute("SELECT key, value FROM settings;")
+        rows = cursor.fetchall()
+        
+        if not rows:
+            print("[Config] Seeding default testing configurations into database...", flush=True)
+            for k, v in DEFAULT_CONFIG.items():
+                val_str = json.dumps(v)
+                if db_url:
+                    cursor.execute("INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING;", (k, val_str))
+                else:
+                    cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?);", (k, val_str))
+            conn.commit()
+        else:
+            for key, val_str in rows:
+                try:
+                    config[key] = json.loads(val_str)
+                except Exception:
+                    config[key] = val_str
+                    
+    except Exception as e:
+        print(f"⚠️ [Config] Error reading/seeding configuration from database: {e}. Using defaults.", flush=True)
+    finally:
+        if conn:
+            conn.close()
+            
+    return config
 
 # Set pandas options for nice terminal outputs
 pd.set_option('display.max_columns', None)
@@ -409,8 +483,11 @@ def fetch_jobseek(search_term, api_key, results_wanted):
 # PIPELINE POST-PROCESSING
 # ==========================================
 
-def score_job(row):
+def score_job(row, config=None):
     """Calculates a numeric relevance score (0-100) for a job posting."""
+    if config is None:
+        config = DEFAULT_CONFIG
+        
     score = 0
     
     title = str(row.get('job_title', '')).lower()
@@ -418,43 +495,43 @@ def score_job(row):
     location = str(row.get('location', '')).lower()
     company = str(row.get('company', '')).lower()
     
-    # 1. Remote Bonus: +10 if "remote" in title, description, or location
+    # 1. Remote Bonus
     if "remote" in title or "remote" in description or "remote" in location:
-        score += SCORE_REMOTE_BONUS
+        score += config.get("score_remote_bonus", 10)
         
-    # 2. Tech Keywords: +8 if any of the tech keywords match
-    if any(tech in title or tech in description for tech in SCORE_TECH_KEYWORDS):
-        score += SCORE_TECH_BONUS
+    # 2. Tech Keywords
+    if any(tech in title or tech in description for tech in config.get("tech_keywords", [])):
+        score += config.get("score_tech_bonus", 8)
         
-    # 3. Seniority: +5 if "senior" or "lead" in title
-    if any(kw in title for kw in SCORE_SENIOR_TITLE_KEYWORDS):
-        score += SCORE_SENIOR_BONUS
+    # 3. Seniority
+    if any(kw in title for kw in config.get("senior_title_keywords", [])):
+        score += config.get("score_senior_bonus", 5)
         
-    # 4. Top-Tier Company: +5 if company matches top-tier list
-    if any(company == company_name or company_name in company for company_name in SCORE_TOP_TIER_COMPANIES):
-        score += SCORE_TOP_TIER_BONUS
+    # 4. Top-Tier Company
+    if any(company == company_name or company_name in company for company_name in config.get("top_tier_companies", [])):
+        score += config.get("score_top_tier_bonus", 5)
         
-    # 5. Startup indicators: +4 if mentions startup keywords
-    if any(kw in description for kw in SCORE_STARTUP_KEYWORDS):
-        score += SCORE_STARTUP_BONUS
+    # 5. Startup indicators
+    if any(kw in description for kw in config.get("startup_keywords", [])):
+        score += config.get("score_startup_bonus", 4)
         
-    # 6. High Salary: +3 if salary_min > 120000
+    # 6. High Salary
     salary_min = row.get('salary_min')
-    if pd.notna(salary_min) and float(salary_min) > SCORE_SALARY_THRESHOLD:
-        score += SCORE_SALARY_BONUS
+    if pd.notna(salary_min) and float(salary_min) > config.get("salary_threshold", 120000):
+        score += config.get("score_salary_bonus", 3)
         
-    # 7. Contract Penalty: -10 if "contract" in title or description
+    # 7. Contract Penalty
     if "contract" in title or "contract" in description:
-        score += SCORE_CONTRACT_PENALTY
+        score += config.get("score_contract_penalty", -10)
         
-    # 8. Junior Java: -8 if "java" in text but "senior" is not in title
+    # 8. Junior Java
     if "java" in (title + " " + description) and "senior" not in title:
-        score += SCORE_JUNIOR_JAVA_PENALTY
+        score += config.get("score_junior_java_penalty", -8)
         
-    # 9. Explicitly NOT remote: -5 if is_remote is explicitly False
+    # 9. Explicitly NOT remote
     is_remote_val = row.get('is_remote')
     if is_remote_val is False or (pd.notna(is_remote_val) and str(is_remote_val).lower() == "false"):
-        score += SCORE_REMOTE_FALSE_PENALTY
+        score += config.get("score_remote_false_penalty", -5)
         
     return max(0, min(100, score))
 
@@ -577,17 +654,23 @@ def main():
     print("=" * 80)
     print("                 JOB FILTER AGGREGATION SERVICE PIPELINE                     ")
     print("=" * 80)
-    print(f"SEARCH TERM:    '{SEARCH_TERM}'")
-    print(f"LOCATION:       '{LOCATION}'")
-    print(f"RESULTS LIMIT:  {RESULTS_WANTED} per source")
+    
+    config = load_config()
+    search_term_val = config.get("search_term", SEARCH_TERM)
+    location_val = config.get("location", LOCATION)
+    results_wanted_val = config.get("results_wanted", RESULTS_WANTED)
+    
+    print(f"SEARCH TERM:    '{search_term_val}'")
+    print(f"LOCATION:       '{location_val}'")
+    print(f"RESULTS LIMIT:  {results_wanted_val} per source")
     print("-" * 80, flush=True)
     
     # Phase 1: Retrieve raw data
-    raw_jh = fetch_jobhive(SEARCH_TERM, LOCATION, RESULTS_WANTED, JOBHIVE_ATS_LIST, JOBHIVE_USE_FULL_SNAPSHOT)
+    raw_jh = fetch_jobhive(search_term_val, location_val, results_wanted_val, JOBHIVE_ATS_LIST, JOBHIVE_USE_FULL_SNAPSHOT)
     print()
-    raw_js = fetch_jobspy(SEARCH_TERM, LOCATION, RESULTS_WANTED)
+    raw_js = fetch_jobspy(search_term_val, location_val, results_wanted_val)
     print()
-    raw_jk = fetch_jobseek(SEARCH_TERM, JOBSEEK_API_KEY, RESULTS_WANTED)
+    raw_jk = fetch_jobseek(search_term_val, JOBSEEK_API_KEY, results_wanted_val)
     
     # Phase 2: Standardize schemas
     print("\n" + "-" * 80)
@@ -611,9 +694,9 @@ def main():
     print(f"Raw Combined Total: {len(combined_raw)} records")
     print(f"Deduplicated Total: {len(deduped_all)} records", flush=True)
     
-    # Calculate score for ALL jobs in pipeline
+    # Calculate score for ALL jobs in pipeline using dynamic config
     print("🔢 Calculating relevance scores...", flush=True)
-    deduped_all["score"] = deduped_all.apply(score_job, axis=1)
+    deduped_all["score"] = deduped_all.apply(score_job, axis=1, args=(config,))
     
     # Sort entire dataset by score descending, then date posted descending
     deduped_all = deduped_all.sort_values(by=["score", "posted"], ascending=[False, False])
@@ -677,7 +760,7 @@ def main():
     db_url = os.getenv("SUPABASE_DB_URL")
     if db_url:
         db_url = db_url.strip()
-    min_score = int(os.getenv("NOTIFICATION_MIN_SCORE", 85))
+    min_score = int(config.get("min_notification_score", 85))
     
     if db_url:
         print("\n" + "-" * 80)
