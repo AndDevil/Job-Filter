@@ -8,7 +8,7 @@ Aggregates, standardizes, deduplicates, and filters job listings from:
 3. JobSeek (jobseek.dev API)
 
 Installation:
-    pip install "jobhive-py[parquet]" python-jobspy pandas requests
+    pip install "ats-scrapers[parquet]" python-jobspy pandas requests
 
 Note on Python 3.14 / NumPy Compatibility:
     On modern Python versions (e.g., 3.14+), JobSpy's legacy pinned NumPy 1.26.3
@@ -234,7 +234,7 @@ def fetch_jobhive(search_term, location, results_wanted, ats_list, use_full_snap
     """Fetches job details from jobhive dataset snapshots."""
     print("🚀 [JobHive] Starting scraper run...", flush=True)
     try:
-        from jobhive import search
+        from ats_scrapers import search
         
         if use_full_snapshot:
             print("[JobHive] Loading full dataset (~1.36 GB snapshot). This may take time...", flush=True)

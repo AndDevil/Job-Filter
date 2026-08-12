@@ -1,4 +1,4 @@
-jobhive-py[parquet]
+ats-scrapers[parquet]
 python-jobspy
 pandas
 requests
