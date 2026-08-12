@@ -288,7 +288,11 @@ DEFAULT_CONFIG = {
     "senior_title_keywords": ["senior", "lead"],
     "top_tier_companies": ["google", "microsoft", "apple", "amazon", "meta", "stripe", "anthropic", "openai", "figma", "vercel"],
     "startup_keywords": ["startup", "series", "funding", "early-stage"],
-    "salary_threshold": 120000
+    "salary_threshold": 120000,
+    "telegram_bot_token": "",
+    "telegram_chat_id": "",
+    "discord_webhook_url": "",
+    "jobspy_proxy": ""
 }
 
 def load_config():
@@ -901,6 +905,36 @@ with tab_settings:
             value=", ".join(current_config.get("startup_keywords", []))
         )
         
+    st.markdown("---")
+    st.subheader("⚙️ Credentials & Connections (Optional)")
+    col_cred1, col_cred2 = st.columns(2)
+    with col_cred1:
+        new_telegram_bot_token = st.text_input(
+            "Telegram Bot Token", 
+            value=current_config.get("telegram_bot_token", ""), 
+            type="password", 
+            help="Telegram Bot Token from @BotFather"
+        )
+        new_telegram_chat_id = st.text_input(
+            "Telegram Chat ID", 
+            value=current_config.get("telegram_chat_id", ""), 
+            type="password", 
+            help="Your User ID from @userinfobot"
+        )
+        new_discord_webhook_url = st.text_input(
+            "Discord Webhook URL", 
+            value=current_config.get("discord_webhook_url", ""), 
+            type="password", 
+            help="Discord Channel Webhook URL"
+        )
+        
+    with col_cred2:
+        new_jobspy_proxy = st.text_area(
+            "JobSpy Proxy List", 
+            value=current_config.get("jobspy_proxy", ""), 
+            help="Proxy endpoints (comma/newline separated). Supports ip:port:user:pass or http://..."
+        )
+        
     # Helper parser
     def parse_csv_list(text):
         return [x.strip().lower() for x in text.split(",") if x.strip()]
@@ -927,7 +961,11 @@ with tab_settings:
                 "senior_title_keywords": parse_csv_list(new_senior_title_keywords),
                 "top_tier_companies": parse_csv_list(new_top_tier_companies),
                 "startup_keywords": parse_csv_list(new_startup_keywords),
-                "salary_threshold": int(new_salary_threshold)
+                "salary_threshold": int(new_salary_threshold),
+                "telegram_bot_token": new_telegram_bot_token.strip(),
+                "telegram_chat_id": new_telegram_chat_id.strip(),
+                "discord_webhook_url": new_discord_webhook_url.strip(),
+                "jobspy_proxy": new_jobspy_proxy.strip()
             }
             save_config(updated_config)
             # Remove keys so they are re-read on reload from database config

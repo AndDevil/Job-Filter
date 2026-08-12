@@ -55,7 +55,11 @@ DEFAULT_CONFIG = {
     "senior_title_keywords": ["senior", "lead"],
     "top_tier_companies": ["google", "microsoft", "apple", "amazon", "meta", "stripe", "anthropic", "openai", "figma", "vercel"],
     "startup_keywords": ["startup", "series", "funding", "early-stage"],
-    "salary_threshold": 120000
+    "salary_threshold": 120000,
+    "telegram_bot_token": "",
+    "telegram_chat_id": "",
+    "discord_webhook_url": "",
+    "jobspy_proxy": ""
 }
 
 def load_config():
@@ -284,14 +288,16 @@ def parse_proxy_string(proxy_env):
         return None
     return raw_list[0] if len(raw_list) == 1 else raw_list
 
-def fetch_jobspy(search_term, location, results_wanted):
+def fetch_jobspy(search_term, location, results_wanted, config=None):
     """Scrapes LinkedIn, Indeed, Glassdoor, Google, ZipRecruiter using JobSpy."""
     print("🚀 [JobSpy] Starting scraper run...", flush=True)
     try:
         from jobspy import scrape_jobs
         site_names = ["linkedin", "indeed", "glassdoor", "google", "zip_recruiter"]
         
-        proxy_env = os.getenv("JOBSPY_PROXY")
+        if config is None:
+            config = {}
+        proxy_env = config.get("jobspy_proxy") or os.getenv("JOBSPY_PROXY")
         proxy = parse_proxy_string(proxy_env)
         
         if proxy:
@@ -483,10 +489,12 @@ def deduplicate_jobs(df):
     df = df.drop(columns=["_priority", "_norm_title", "_norm_company", "_norm_location"])
     return df
 
-def send_telegram_notification(job):
+def send_telegram_notification(job, config=None):
     """Sends a job alert message to Telegram."""
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if config is None:
+        config = {}
+    token = config.get("telegram_bot_token") or os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = config.get("telegram_chat_id") or os.getenv("TELEGRAM_CHAT_ID")
     if not token or not chat_id:
         return False
         
@@ -521,9 +529,11 @@ def send_telegram_notification(job):
         return False
 
 
-def send_discord_notification(job):
+def send_discord_notification(job, config=None):
     """Sends a job alert message to Discord via webhook."""
-    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if config is None:
+        config = {}
+    webhook_url = config.get("discord_webhook_url") or os.getenv("DISCORD_WEBHOOK_URL")
     if not webhook_url:
         return False
         
@@ -579,7 +589,7 @@ def main():
     
     # Phase 1: Retrieve raw data
     print("[PROGRESS] 15 Scraping LinkedIn, Indeed, Glassdoor...", flush=True)
-    raw_js = fetch_jobspy(search_term_val, location_val, results_wanted_val)
+    raw_js = fetch_jobspy(search_term_val, location_val, results_wanted_val, config)
     print()
     print("[PROGRESS] 55 Scraping JobSeek API...", flush=True)
     raw_jk = fetch_jobseek(search_term_val, JOBSEEK_API_KEY, results_wanted_val)
@@ -783,9 +793,9 @@ def main():
                 print(f"[Alert] Found {len(alert_jobs)} new high-score jobs (>= {min_score}). Dispatching alerts...", flush=True)
                 for job in alert_jobs:
                     # Try sending Telegram notification
-                    tg_success = send_telegram_notification(job)
+                    tg_success = send_telegram_notification(job, config)
                     # Try sending Discord notification
-                    dc_success = send_discord_notification(job)
+                    dc_success = send_discord_notification(job, config)
                     
                     if tg_success or dc_success:
                         # Mark alert as sent in the database
