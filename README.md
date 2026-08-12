@@ -7,7 +7,6 @@ An automated job search service that scrapes multiple job boards, standardizes a
 ## 🚀 Key Features
 
 1. **Multi-Source Aggregator**:
-   - **JobHive**: Scrapes 3.2M+ jobs from 86K+ companies across major ATS systems (Greenhouse, Lever, Ashby, BambooHR, Workable, YCombinator).
    - **JobSpy**: Scrapes LinkedIn, Indeed, Glassdoor, Google Jobs, and ZipRecruiter.
    - **JobSeek (Optional)**: Connects to the free `jobseek.dev` API if an API key is provided.
 2. **Weighted Smart Scoring**:
