@@ -8,6 +8,8 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
     - name: Checkout repository
@@ -43,3 +45,19 @@ jobs:
           relevant_jobs.csv
           all_jobs_combined.csv
         retention-days: 30
+
+    - name: Commit and push changes
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        
+        # Add generated CSVs and history folder (including sent_alerts.txt)
+        git add relevant_jobs.csv all_jobs_combined.csv job_history/
+        
+        # Commit and push only if there are changes
+        if ! git diff --cached --quiet; then
+          git commit -m "chore: auto-update scraped jobs and alert logs [skip ci]"
+          git push
+        else
+          echo "No changes to commit."
+        fi
