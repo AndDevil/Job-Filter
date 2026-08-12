@@ -556,7 +556,7 @@ if not filtered_df.empty:
     st.sidebar.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 # 7. Main Panel Display
-tab_jobs, tab_settings = st.tabs(["💼 Job Listings & Tracker", "⚙️ Pipeline Settings"])
+tab_jobs, tab_settings, tab_guide = st.tabs(["💼 Job Listings & Tracker", "⚙️ Pipeline Settings", "📖 User Guide"])
 
 with tab_jobs:
     if filtered_df.empty:
@@ -771,6 +771,7 @@ with tab_settings:
                 )
                 
                 # Read stdout in real-time
+                start_time = time.time()
                 while True:
                     line = process.stdout.readline()
                     if not line and process.poll() is not None:
@@ -781,10 +782,20 @@ with tab_settings:
                         if match:
                             percent = int(match.group(1))
                             desc = match.group(2).strip()
+                            
+                            # Calculate ETA metrics
+                            elapsed = time.time() - start_time
+                            if percent > 0:
+                                est_total = elapsed / (percent / 100.0)
+                                remaining = max(0.0, est_total - elapsed)
+                                eta_text = f"(Elapsed: {int(elapsed)}s | Remaining: {int(remaining)}s)"
+                            else:
+                                eta_text = f"(Elapsed: {int(elapsed)}s)"
+                                
                             if not desc:
                                 desc = f"Running scraper... {percent}%"
                             
-                            progress_bar.progress(percent, text=f"⚡ {desc}")
+                            progress_bar.progress(percent, text=f"⚡ {desc} {eta_text}")
                 
                 # Get process result
                 stdout, stderr = process.communicate()
@@ -801,4 +812,88 @@ with tab_settings:
                     st.text_area("Console Output (stdout)", value=stdout, height=200)
             except Exception as e:
                 st.error(f"❌ Failed to launch pipeline process: {e}")
+
+with tab_guide:
+    st.markdown("## 📖 User Guide & Documentation")
+    st.write("Welcome to the Personal Job Tracker & Scraper user guide! This section explains how the system aggregates, standardizes, scores, saves, and automates your job search.")
+    
+    st.markdown("---")
+    
+    # Section 1: Scoring Rules
+    st.markdown("### 🔢 1. Weighted Relevance Scoring Engine")
+    st.write("Each scraped job listing is evaluated dynamically on a **0 to 100 point scale** based on your scoring rules:")
+    
+    col_bonuses, col_penalties = st.columns(2)
+    with col_bonuses:
+        st.markdown("#### **📈 Bonuses**")
+        st.markdown("""
+        * **🌐 Remote Suitability:** Active if 'remote' is in the title, description, or location. *(Default: +10)*
+        * **💻 Tech Stack Match:** Match with target technologies (e.g. Python, TypeScript, Go, React, AWS). *(Default: +8)*
+        * **👑 Seniority/Lead Role:** Match with senior keyword tags in the job title. *(Default: +5)*
+        * **🏢 Top-Tier Companies:** Match with target companies (e.g. Google, Apple, Meta, OpenAI). *(Default: +5)*
+        * **🚀 Startup Mentions:** Triggered by startup, funding, or series labels in the description. *(Default: +4)*
+        * **💵 Competitive Salary:** Awarded if the minimum salary exceeds the threshold (e.g., $120,000). *(Default: +3)*
+        """)
+        
+    with col_penalties:
+        st.markdown("#### **📉 Penalties**")
+        st.markdown("""
+        * **💼 Contract Roles:** Applied if the title/description mentions 'contract'. *(Default: -10)*
+        * **☕ Junior Java Roles:** Triggered by 'java' mentions if the role is not explicitly senior. *(Default: -8)*
+        * **🚫 Non-Remote Placement:** Applied if the role is explicitly marked as non-remote or on-site. *(Default: -5)*
+        """)
+        
+    st.markdown("---")
+    
+    # Section 2: Configuration settings
+    st.markdown("### ⚙️ 2. Dynamic Configurations Storage")
+    st.markdown("""
+    * **Key-Value Settings Table:** All search targets, scoring rules, and keyword lists are saved directly to a database `settings` table (SQLite locally, Supabase PostgreSQL in cloud mode).
+    * **Zero Code Changes:** Changing settings in the **Pipeline Settings** tab and clicking **Save Configurations** immediately overrides the defaults without editing files.
+    * **Automated Scraper Sync:** Both the local background scraper and the daily GitHub Actions scraper fetch configurations directly from the database at startup, meaning your scraper always runs with your latest settings automatically!
+    """)
+    
+    st.markdown("---")
+    
+    # Section 3: Webhook alerts
+    st.markdown("### 🔔 3. Discord & Telegram Telemetry Webhooks")
+    st.write("You can receive instant mobile alerts whenever a new high-scoring job is found by configuring the following environment variables or secrets:")
+    st.markdown("""
+    #### **📢 Discord Webhooks Setup**
+    1. Open your Discord server, click **Channel Settings** -> **Integrations** -> **Create Webhook**.
+    2. Copy the Webhook URL.
+    3. Save it in the repository secrets or local system env as `DISCORD_WEBHOOK_URL`.
+    
+    #### **💬 Telegram Bot Setup**
+    1. Search for `@BotFather` on Telegram, send `/newbot`, and copy the generated **HTTP Bot Token** (`TELEGRAM_BOT_TOKEN`).
+    2. Message `@userinfobot` to retrieve your personal **User Chat ID** (`TELEGRAM_CHAT_ID`).
+    3. Save both variables. The bot will automatically message you new job alerts!
+    """)
+    
+    st.markdown("---")
+    
+    # Section 4: Automation
+    st.markdown("### 🔄 4. Scraper Automation Runners")
+    
+    tab_auto_local, tab_auto_cloud = st.tabs(["💻 Local Background Daemon", "☁️ GitHub Actions Cloud"])
+    
+    with tab_auto_local:
+        st.markdown("#### **Local Background Runner (Windows Task Scheduler)**")
+        st.write("You can set up the scraper to run automatically in the background on your local machine using the built-in Windows scripts:")
+        st.markdown("""
+        1. **Admin Privileges:** Right-click [install_app.bat](file:///c:/Users/Shrish/Downloads/Intern%20projects/Job%20Filter/install_app.bat) and select **Run as Administrator**.
+        2. **Automatic Scheduled Task:** The installer registers a task in Windows Task Scheduler named `JobScraper_Daily` to run silently at **8:00 AM** every day.
+        3. **Startup Dashboard:** The installer copies [run_dashboard_silent.vbs](file:///c:/Users/Shrish/Downloads/Intern%20projects/Job%20Filter/run_dashboard_silent.vbs) to the Windows Startup folder, ensuring your Streamlit app starts automatically in the background on boot.
+        4. **Clean Uninstall:** To remove scheduled tasks and startup entries, run [uninstall_app.bat](file:///c:/Users/Shrish/Downloads/Intern%20projects/Job%20Filter/uninstall_app.bat) as Administrator.
+        """)
+        
+    with tab_auto_cloud:
+        st.markdown("#### **Cloud Runner (GitHub Actions)**")
+        st.write("The scraper is set up to run automatically in the cloud every day on a schedule:")
+        st.markdown("""
+        * **Workflow Schedule:** The [.github/workflows/scrape.yml](file:///c:/Users/Shrish/Downloads/Intern%20projects/Job%20Filter/.github/workflows/scrape.yml) workflow runs daily at **8:00 AM UTC** on `ubuntu-latest`.
+        * **Output Archives:** Generates and uploads `relevant_jobs.csv` and `all_jobs_combined.csv` as download artifacts.
+        * **Auto-Commit Integration:** Automatically commits any new jobs and history logs (`sent_alerts.txt`) back to your GitHub repository to preserve state across runs.
+        """)
+
 
