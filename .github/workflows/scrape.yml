@@ -30,9 +30,9 @@ jobs:
     - name: Run pipeline
       env:
         SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-        JOBSPY_PROXY: ${{ secrets.JOBSPY_PROXY }}
+        JOBSPY_PROXY: ${{ vars.JOBSPY_PROXY || secrets.JOBSPY_PROXY }}
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID || secrets.TELEGRAM_CHAT_ID }}
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
         python job_pipeline.py
