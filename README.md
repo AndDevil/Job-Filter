@@ -13,12 +13,23 @@ An automated job search service that scrapes multiple job boards, standardizes a
 2. **Weighted Smart Scoring**:
    - Scores every job dynamically (0–100) based on remote suitability, matched tech stack keywords, senior titles, top-tier companies, startup mentions, and high salary benchmarks.
    - Applies penalties for contracts, junior Java roles, or explicitly non-remote jobs.
-3. **Application Tracking Dashboard**:
-   - Built with Streamlit and SQLite.
+3. **Dynamic Settings & Live Sync**:
+   - Search parameters, keyword weighting lists, minimum scores, and alert configurations are loaded dynamically from the PostgreSQL database `settings` table. 
+   - Manage and save configurations directly from the Streamlit UI without editing code.
+4. **Resume-Driven Auto-Configuration (Dual NLP Engine)**:
+   - Upload your PDF/TXT resume to automatically extract skills, recommended designations, seniority level, and startup experience suitability.
+   - **Premium Engine:** Uses the Gemini Structured JSON generation API if a `GEMINI_API_KEY` is present.
+   - **Local Fallback Engine:** Uses `spaCy` (`en_core_web_sm`) tokenization and noun-chunk extraction locally (works out-of-the-box offline).
+   - Auto-fills the config dashboard with a single click.
+5. **Real-Time Progress & Execution ETA**:
+   - Scraper runs output `[PROGRESS]` logs that are parsed dynamically by the dashboard to show a precise progress percentage and execution timers (elapsed and estimated remaining time).
+6. **Application Tracking Dashboard**:
+   - Built with Streamlit and SQLite/Supabase PostgreSQL.
    - Features beautiful, card-based layouts with HSL color-coded metrics and charts.
    - Updates application status (New, Applied, Interviewing, Rejected, Offered) and logs custom tracking notes in real-time.
-4. **Daily Automation**:
-   - GitHub Actions workflow runs every day at 8:00 AM UTC and uploads the fresh outputs as downloadable CSV artifacts.
+7. **Daily Automation (Node 24 / Git Fixes)**:
+   - GitHub Actions workflow runs every day at 8:00 AM UTC and uploads output CSV artifacts.
+   - Fully upgraded to **Node.js 24** runtimes and configured with master gitcheckouts to handle automated logs commits cleanly.
 
 ---
 
@@ -54,11 +65,17 @@ Follow these steps to set up the project on your machine:
    ```bash
    pip install -r requirements.txt
    ```
+   > [!NOTE]
+   > For the local fallback resume parser, spaCy requires the `en_core_web_sm` model. The dashboard will automatically attempt to download it on first launch, or you can run:
+   > ```bash
+   > python -m spacy download en_core_web_sm
+   > ```
+
    > [!TIP]
    > On modern Python versions (e.g., Python 3.14+), JobSpy's pinned dependency version for NumPy may fail to compile from source. If you experience build errors, run:
    > ```bash
    > pip install --no-deps python-jobspy
-   > pip install pandas requests numpy pydantic anyio httpx streamlit plotly
+   > pip install pandas requests numpy pydantic anyio httpx streamlit plotly pypdf spacy google-generativeai
    > ```
 
 ---
@@ -71,11 +88,11 @@ Execute the Python script manually to scrape, deduplicate, score, and output job
 python job_pipeline.py
 ```
 **Output Files Generated**:
-* `relevant_jobs.csv` (Top 50 scored job opportunities)
+* `relevant_jobs.csv` (Top scored job opportunities)
 * `all_jobs_combined.csv` (All matching job opportunities)
 
 ### 2. Start the Streamlit Dashboard
-Launch the interactive web application to browse jobs and track your applications:
+Launch the interactive web application to browse jobs, configure weights, parse resumes, and track applications:
 ```bash
 streamlit run dashboard.py
 ```
@@ -88,7 +105,7 @@ The application will start at `http://localhost:8501`.
 The scraper is configured to run automatically on GitHub Actions:
 * **Trigger Times**: Daily at `08:00 AM UTC` and manual triggers.
 * **Outputs**: Artifacts containing `relevant_jobs.csv` and `all_jobs_combined.csv` (retained for 30 days).
-* **Setup**: Push the `.github/workflows/scrape.yml` file to your GitHub repository to enable the workflow.
+* **Setup**: Push the `.github/workflows/scrape.yml` file to your GitHub repository. The workflow uses updated Node 24 actions (`actions/checkout@v6`, `actions/setup-python@v6`, `actions/upload-artifact@v7`) and automatically commits the scraped jobs back to master.
 
 ---
 
@@ -115,10 +132,10 @@ This project supports running as a cloud-native service. When configured, jobs a
 2. Click **Create Webhook**, select the target channel, and copy the **Webhook URL**.
 3. Set this as the `DISCORD_WEBHOOK_URL` environment variable.
 
-### 3. JobSpy Proxy Setup
-To bypass rate limits when scraping on cloud runners (like GitHub Actions), configure a proxy:
-1. Obtain a rotating proxy address or API endpoint (e.g., from ScraperAPI, Webshare).
-2. Set the `JOBSPY_PROXY` environment variable. JobSpy will route all HTTP requests through this proxy.
+### 3. Gemini API Key Setup (Optional)
+To use the premium AI model for resume auto-configuration parsing:
+1. Obtain an API key from Google AI Studio.
+2. Set the `GEMINI_API_KEY` environment variable. If missing, the dashboard automatically drops back to the local spaCy NLP dictionary engine.
 
 ### 4. Configuration Variables
 Secure your deployment by setting these environment variables locally (or as GitHub Secrets):
@@ -131,7 +148,7 @@ Secure your deployment by setting these environment variables locally (or as Git
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot API Token | Optional (enables phone alerts) |
 | `TELEGRAM_CHAT_ID` | Telegram User Chat ID | Optional (enables phone alerts) |
 | `DISCORD_WEBHOOK_URL` | Discord Channel Webhook URL | Optional (enables phone alerts) |
-| `NOTIFICATION_MIN_SCORE` | Minimum score threshold for notifications (default: `85`) | Optional |
+| `GEMINI_API_KEY` | Google Gemini API Key for Resume Parser | Optional (falls back to spaCy offline parser) |
 
 ### 5. Streamlit Cloud Deployment
 1. Push your repository to GitHub.
@@ -141,6 +158,7 @@ Secure your deployment by setting these environment variables locally (or as Git
    ```toml
    SUPABASE_DB_URL = "postgresql://..."
    APP_PASSWORD = "your-secure-password"
+   GEMINI_API_KEY = "your-gemini-key"
    ```
 5. Click **Deploy**. Your secure dashboard is now live and connected to your database!
 
@@ -178,4 +196,5 @@ schtasks /create /tn "JobAggregatorPipeline" /tr "C:\path\to\project\run.bat" /s
 
 ### How to Test and Check Logs
 * **Immediate Test**: Right-click the task `JobAggregatorPipeline` in the Active Tasks list and select **Run**.
-* **Audit and Run Log**: You can check the execution outcomes in Task Scheduler under the **History** tab (ensure "Enable All Tasks History" is checked in the Actions panel).
+* **Audit and Run Log**: You can check the execution outcomes in Task Scheduler under the **History** tab.
+
