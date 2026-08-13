@@ -142,7 +142,7 @@ Secure your deployment by setting these environment variables locally (or as Git
 | Variable Name | Description | Required / Optional |
 |---|---|---|
 | `SUPABASE_DB_URL` | Supabase PostgreSQL Connection String | Optional (falls back to local SQLite/CSV) |
-| `APP_PASSWORD` | Access password for the Streamlit dashboard | Optional (locks app if set) |
+| `APP_PASSWORD` | Access password for the Streamlit dashboard (e.g., `Demo2026`) | Optional (locks app if set) |
 | `JOBSPY_PROXY` | Proxy endpoint URL or API key | Optional (bypasses cloud rate limits) |
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot API Token | Optional (enables phone alerts) |
 | `TELEGRAM_CHAT_ID` | Telegram User Chat ID | Optional (enables phone alerts) |
@@ -157,7 +157,7 @@ Secure your deployment by setting these environment variables locally (or as Git
 5. Render will automatically parse the [render.yaml](file:///c:/Users/Shrish/Downloads/Intern%20projects/Job%20Filter/render.yaml) configuration file. Fill in your environment variables:
    * `SUPABASE_DB_URL`: The **Connection Pooler** URI of your persistent Supabase PostgreSQL database (Session mode recommended).
      * *⚠️ Warning:* If your database password contains special characters (like `%` or `?`), make sure to **URL-encode** them in the connection string (e.g. replace `%` with `%25` and `?` with `%3F`) to prevent DSN parser errors on deployment!
-   * `APP_PASSWORD`: The access password to lock/protect your Streamlit dashboard.
+   * `APP_PASSWORD`: The access password to lock/protect your Streamlit dashboard (e.g., `Demo2026`).
    * `GEMINI_API_KEY`: Google Gemini API key for the resume parsing feature.
 6. Click **Apply**. Render will automatically provision, install dependencies, compile the spaCy NLP package, and start your Streamlit dashboard.
 
@@ -167,9 +167,9 @@ Secure your deployment by setting these environment variables locally (or as Git
 3. Click **New app**, select your repository, branch, and file (`dashboard.py`).
 4. In the app settings, click **Advanced settings** and paste your environment variables into the **Secrets** text area, e.g.:
    ```toml
-   SUPABASE_DB_URL = "postgresql://..."
-   APP_PASSWORD = "your-secure-password"
-   GEMINI_API_KEY = "your-gemini-key"
+    SUPABASE_DB_URL = "postgresql://..."
+    APP_PASSWORD = "Demo2026"
+    GEMINI_API_KEY = "your-gemini-key"
    ```
 5. Click **Deploy**. Your secure dashboard is now live!
 
