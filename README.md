@@ -149,8 +149,20 @@ Secure your deployment by setting these environment variables locally (or as Git
 | `DISCORD_WEBHOOK_URL` | Discord Channel Webhook URL | Optional (enables phone alerts) |
 | `GEMINI_API_KEY` | Google Gemini API Key for Resume Parser | Optional (falls back to spaCy offline parser) |
 
-### 5. Streamlit Cloud Deployment
+### 5. Render Cloud Deployment (Recommended)
 1. Push your repository to GitHub.
+2. Sign in to the [Render Console](https://dashboard.render.com).
+3. Click **New +** > **Blueprint**.
+4. Select your GitHub repository and choose the `render` branch to load configs.
+5. Render will automatically parse the [render.yaml](file:///c:/Users/Shrish/Downloads/Intern%20projects/Job%20Filter/render.yaml) configuration file. Fill in your environment variables:
+   * `SUPABASE_DB_URL`: The **Connection Pooler** URI of your persistent Supabase PostgreSQL database (Session mode recommended).
+     * *⚠️ Warning:* If your database password contains special characters (like `%` or `?`), make sure to **URL-encode** them in the connection string (e.g. replace `%` with `%25` and `?` with `%3F`) to prevent DSN parser errors on deployment!
+   * `APP_PASSWORD`: The access password to lock/protect your Streamlit dashboard.
+   * `GEMINI_API_KEY`: Google Gemini API key for the resume parsing feature.
+6. Click **Apply**. Render will automatically provision, install dependencies, compile the spaCy NLP package, and start your Streamlit dashboard.
+
+### 6. Streamlit Community Cloud Deployment
+1. Push your repository to GitHub (`master` branch).
 2. Sign in to [Streamlit Community Cloud](https://share.streamlit.io/).
 3. Click **New app**, select your repository, branch, and file (`dashboard.py`).
 4. In the app settings, click **Advanced settings** and paste your environment variables into the **Secrets** text area, e.g.:
@@ -159,7 +171,7 @@ Secure your deployment by setting these environment variables locally (or as Git
    APP_PASSWORD = "your-secure-password"
    GEMINI_API_KEY = "your-gemini-key"
    ```
-5. Click **Deploy**. Your secure dashboard is now live and connected to your database!
+5. Click **Deploy**. Your secure dashboard is now live!
 
 ---
 
