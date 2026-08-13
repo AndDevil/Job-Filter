@@ -61,11 +61,7 @@ DEFAULT_CONFIG = {
     "senior_title_keywords": ["senior", "lead"],
     "top_tier_companies": ["google", "microsoft", "apple", "amazon", "meta", "stripe", "anthropic", "openai", "figma", "vercel"],
     "startup_keywords": ["startup", "series", "funding", "early-stage"],
-    "salary_threshold": 120000,
-    "telegram_bot_token": "",
-    "telegram_chat_id": "",
-    "discord_webhook_url": "",
-    "jobspy_proxy": ""
+    "salary_threshold": 120000
 }
 
 def load_config():
