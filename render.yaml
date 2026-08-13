@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: job-aggregator-dashboard
+    env: python
+    buildCommand: "pip install -r requirements.txt && python -m spacy download en_core_web_sm"
+    startCommand: "streamlit run dashboard.py --server.port $PORT --server.address 0.0.0.0"
+    plan: free
+    envVars:
+      - key: SUPABASE_DB_URL
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
