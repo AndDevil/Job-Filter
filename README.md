@@ -2,6 +2,10 @@
 
 An automated job search service that scrapes multiple job boards, standardizes and deduplicates listings, computes custom relevance scores, and allows you to track application progress using a modern interactive Streamlit dashboard.
 
+> [!TIP]
+> **🚀 Live Demo Build:** Check out the live deployed dashboard here: [https://job-aggregator-dashboard.onrender.com/](https://job-aggregator-dashboard.onrender.com/)
+> * **Password:** `Demo2026`
+
 ---
 
 ## 🚀 Key Features
