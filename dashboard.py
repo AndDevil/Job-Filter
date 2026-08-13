@@ -1107,7 +1107,7 @@ with tab_guide:
     # Section 4: Automation
     st.markdown("### 🔄 4. Scraper Automation Runners")
     
-    tab_auto_local, tab_auto_cloud = st.tabs(["💻 Local Background Daemon", "☁️ GitHub Actions Cloud"])
+    tab_auto_local, tab_auto_cloud, tab_auto_render = st.tabs(["💻 Local Background Daemon", "☁️ GitHub Actions Cloud", "🚀 Render Cloud App"])
     
     with tab_auto_local:
         st.markdown("#### **Local Background Runner (Windows Task Scheduler)**")
@@ -1126,6 +1126,18 @@ with tab_guide:
         * **Workflow Schedule:** The [.github/workflows/scrape.yml](file:///c:/Users/Shrish/Downloads/Intern%20projects/Job%20Filter/.github/workflows/scrape.yml) workflow runs daily at **8:00 AM UTC** on `ubuntu-latest`.
         * **Output Archives:** Generates and uploads `relevant_jobs.csv` and `all_jobs_combined.csv` as download artifacts.
         * **Auto-Commit Integration:** Automatically commits any new jobs and history logs (`sent_alerts.txt`) back to your GitHub repository to preserve state across runs.
+        """)
+        
+    with tab_auto_render:
+        st.markdown("#### **Cloud Web App Hosting (Render)**")
+        st.write("You can host your Streamlit dashboard dynamically in the cloud on Render using the dedicated configuration files:")
+        st.markdown("""
+        * **Dedicated Branch:** Deploy using the `render` branch, which contains [render.yaml](file:///c:/Users/Shrish/Downloads/Intern%20projects/Job%20Filter/render.yaml) (Render Blueprint config) and [.python-version](file:///c:/Users/Shrish/Downloads/Intern%20projects/Job%20Filter/.python-version).
+        * **Environment Variables:** Set the following configurations in your Render dashboard settings:
+          * `SUPABASE_DB_URL` — Connection pooling URI of your persistent Supabase PostgreSQL database (Session mode recommended).
+          * `APP_PASSWORD` — Access token/password to unlock the dashboard.
+          * `GEMINI_API_KEY` — API key for resume parsing model.
+        * **⚠️ URL-Encoding Caveat:** If your database password contains special characters (like `%` or `?`), make sure to **URL-encode** them in the connection string (e.g. replace `%` with `%25` and `?` with `%3F`) to prevent DSN parser errors on deploy!
         """)
 
 
