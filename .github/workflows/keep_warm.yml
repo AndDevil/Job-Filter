@@ -1,0 +1,17 @@
+name: Keep Render Dashboard Warm
+
+on:
+  schedule:
+    # Runs every 14 minutes.
+    # Note: GitHub Action schedules can be delayed up to 30-50 minutes depending on GitHub's queue load.
+    # For a 100% reliable zero-cold-start solution, setting up a free monitor on UptimeRobot or cron-job.org is highly recommended.
+    - cron: '*/14 * * * *'
+  workflow_dispatch:      # Allows manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render Dashboard
+        run: |
+          curl -sI https://job-aggregator-dashboard.onrender.com/

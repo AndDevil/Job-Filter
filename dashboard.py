@@ -1102,6 +1102,9 @@ with tab_guide:
           * `APP_PASSWORD` — Access token/password to unlock the dashboard.
           * `GEMINI_API_KEY` — API key for resume parsing model.
         * **⚠️ URL-Encoding Caveat:** If your database password contains special characters (like `%` or `?`), make sure to **URL-encode** them in the connection string (e.g. replace `%` with `%25` and `?` with `%3F`) to prevent DSN parser errors on deploy!
+        * **⚡ Cold Start Prevention:** Render free-tier services sleep after 15 minutes of inactivity. To prevent cold starts:
+          * **GitHub Actions Cron:** We have included a `.github/workflows/keep_warm.yml` workflow to ping the URL every 14 minutes.
+          * **UptimeRobot (Recommended):** Set up a free HTTP(S) monitor on [UptimeRobot](https://uptimerobot.com) targeting your URL with a 5-minute interval for a 100% reliable warmup.
         """)
 
 

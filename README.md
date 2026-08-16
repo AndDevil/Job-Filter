@@ -164,6 +164,10 @@ Secure your deployment by setting these environment variables locally (or as Git
    * `APP_PASSWORD`: The access password to lock/protect your Streamlit dashboard (e.g., `Demo2026`).
    * `GEMINI_API_KEY`: Google Gemini API key for the resume parsing feature.
 6. Click **Apply**. Render will automatically provision, install dependencies, compile the spaCy NLP package, and start your Streamlit dashboard.
+7. **Preventing Free-Tier Cold Starts:** Render spins down free web services after 15 minutes of inactivity, causing a slow first load (cold start). You have two ways to keep it warm:
+   * **Option A: GitHub Actions (Built-in)** — We have added a [.github/workflows/keep_warm.yml](file:///.github/workflows/keep_warm.yml) workflow which pings your app every 14 minutes. Ensure GitHub Actions are enabled in your repository settings under the **Actions** tab.
+   * **Option B: UptimeRobot (100% Reliable & Recommended)** — Set up a free HTTP(S) monitor on [UptimeRobot](https://uptimerobot.com) pointing to `https://job-aggregator-dashboard.onrender.com/` with a **5-minute interval**. This is highly recommended because GitHub Action cron schedules can occasionally be delayed.
+
 
 ### 6. Streamlit Community Cloud Deployment
 1. Push your repository to GitHub (`master` branch).
